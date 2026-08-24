@@ -142,10 +142,13 @@ impl From<timespec> for Timespec {
 
 impl From<Timespec> for timespec {
     fn from(val: Timespec) -> Self {
-        Self {
-            tv_sec: val.tv_sec as _,
-            tv_nsec: val.tv_nsec as _,
-        }
+        // timespec can't be built with a struct literal as on some targets
+        // bindgen generates extra fields, e.g. on 32-bit musl targets
+        // timespec's padding around tv_nsec appears as bitfield members.
+        let mut ts: timespec = unsafe { std::mem::zeroed() };
+        ts.tv_sec = val.tv_sec as _;
+        ts.tv_nsec = val.tv_nsec as _;
+        ts
     }
 }
 
@@ -289,10 +292,7 @@ impl Time {
     /// # Ruby::init(example).unwrap()
     /// ```
     pub fn timespec(self) -> Result<Timespec, Error> {
-        let mut timespec = timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        };
+        let mut timespec: timespec = unsafe { std::mem::zeroed() };
         protect(|| unsafe {
             timespec = rb_time_timespec(self.as_rb_value());
             Ruby::get_with(self).qnil()
@@ -398,10 +398,7 @@ impl TryConvert for Time {
 
 impl TryConvert for SystemTime {
     fn try_convert(val: Value) -> Result<Self, Error> {
-        let mut timespec = timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        };
+        let mut timespec: timespec = unsafe { std::mem::zeroed() };
         protect(|| unsafe {
             timespec = rb_time_timespec(val.as_rb_value());
             Ruby::get_with(val).qnil()
@@ -427,10 +424,7 @@ impl TryConvert for SystemTime {
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl TryConvert for chrono::DateTime<chrono::Utc> {
     fn try_convert(val: Value) -> Result<Self, Error> {
-        let mut timespec = timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        };
+        let mut timespec: timespec = unsafe { std::mem::zeroed() };
         protect(|| unsafe {
             timespec = rb_time_timespec(val.as_rb_value());
             Ruby::get_with(val).qnil()

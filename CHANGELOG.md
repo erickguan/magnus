@@ -35,6 +35,7 @@
 - `RStruct::get`/`RStruct::set`, use `RStruct::aref`/`RStruct::aset` instead.
 
 ### Fixed
+- Fixed error compiling on 32-bit musl platforms (e.g. `arm-linux-musl`).
 
 ### Security
 
