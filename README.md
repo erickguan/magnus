@@ -373,7 +373,7 @@ See `magnus::TryConvert` for more details.
 | `[T; N]`                                                             | `[T]`, `#to_ary`                        |
 | `magnus::RArray`                                                     | `Array`, `#to_ary`                      |
 | `magnus::RHash`                                                      | `Hash`, `#to_hash`                      |
-| `std::time::SystemTime`, `magnus::Time`, `chrono::DateTime<T>`§      | `Time`                                  |
+| `std::time::SystemTime`, `magnus::Time`, `chrono::DateTime<T>`§, `jiff::Timestamp`‖ | `Time`                                |
 | `magnus::Value`                                                      | any object                              |
 | `Vec<T>`\*                                                           | `[T]`, `#to_ary`                        |
 | `HashMap<K, V>`\*                                                    | `{K => V}`, `#to_hash`                  |
@@ -386,6 +386,14 @@ See `magnus::TryConvert` for more details.
 ‡ when the `bytes` feature is enabled
 
 § when the `chrono` feature is enabled; `T` can be `Utc` or `FixedOffset`.
+
+‖ when the `jiff` feature is enabled. `Timestamp` represents an exact instant,
+so converting from Ruby ignores the `Time` object's timezone presentation. A
+`Timestamp` converted to Ruby becomes a UTC `Time`. `jiff::Zoned` is not
+converted because Ruby core `Time` cannot generally preserve an IANA timezone
+identity and DST rules. Civil types represent unzoned wall-clock fields, not an
+instant. `jiff::Span` and `jiff::SignedDuration` have distinct duration
+semantics, so neither is converted automatically.
 
 ### Rust returning / passing values to Ruby
 
@@ -405,7 +413,7 @@ and `magnus::ArgList` for some additional details.
 | `Result<T, magnus::Error>` (return only)           | `T` or raises error                     |
 | `(T, U)`, `(T, U, V)`, etc, `[T; N]`, `Vec<T>`     | `Array`                                 |
 | `HashMap<K, V>`                                    | `Hash`                                  |
-| `std::time::SystemTime`                            | `Time`                                  |
+| `std::time::SystemTime`, `jiff::Timestamp`‖        | `Time`                                  |
 | `T`, `typed_data::Obj<T>` where `T: TypedData`\*  | instance of `<T as TypedData>::class()` |
 
 \* see the `wrap` macro.

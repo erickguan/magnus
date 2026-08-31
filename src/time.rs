@@ -344,6 +344,23 @@ impl IntoValue for SystemTime {
     }
 }
 
+#[cfg(feature = "jiff")]
+#[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
+impl IntoValue for jiff::Timestamp {
+    #[inline]
+    fn into_value_with(self, ruby: &Ruby) -> Value {
+        // jiff::Timestamp is an instant and carrys no timezone information,
+        // so we use UTC here by convention.
+        ruby.time_timespec_new(
+            Timespec {
+                tv_sec: self.as_second(),
+                tv_nsec: self.subsec_nanosecond(),
+            },
+            Offset::utc(),
+        )?
+    }
+}
+
 #[cfg(feature = "chrono")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl IntoValue for chrono::DateTime<chrono::Utc> {
@@ -391,6 +408,30 @@ impl TryConvert for Time {
                 format!("no implicit conversion of {} into Time", unsafe {
                     val.classname()
                 },),
+            )
+        })
+    }
+}
+
+#[cfg(feature = "jiff")]
+#[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
+impl TryConvert for jiff::Timestamp {
+    fn try_convert(val: Value) -> Result<Self, Error> {
+        let time = Time::try_convert(val)?;
+        let ts = time.timespec()?;
+        jiff::Timestamp::new(
+            ts.tv_sec,
+            i32::try_from(ts.tv_nsec).map_err(|_| {
+                Error::new(
+                    Ruby::get_with(val).exception_arg_error(),
+                    "time nanoseconds out of range",
+                )
+            })?,
+        )
+        .map_err(|_| {
+            Error::new(
+                Ruby::get_with(val).exception_range_error(),
+                "time out of range for jiff::Timestamp",
             )
         })
     }

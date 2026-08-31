@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 ### Added
+- Automatic conversion between `jiff::Timestamp` and Ruby `Time` with
+  nanosecond precision.
 - `Ruby::profile_frames` to collect a lightweight backtrace for profiling.
 - `Thread::profile_frames` to collect a lightweight backtrace for profiling a
   specific thread.
