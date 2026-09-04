@@ -26,6 +26,7 @@ default = ["old-api", "io"]
 bytes = ["dep:bytes"]
 chrono = ["dep:chrono"]
 jiff = ["dep:jiff"]
+jiff-zoned = ["jiff"]
 embed = ["rb-sys/link-ruby"]
 old-api = []
 rb-sys = []
@@ -44,11 +45,17 @@ rb-sys = { version = "0.9.124", default-features = false, features = [
 seq-macro = "0.3"
 
 [dev-dependencies]
+# Enable Jiff's bundled timezone database for named-zone integration tests.
+jiff = { version = "0.2.35", default-features = false, features = [
+    "std",
+    "tzdb-bundle-always",
+] }
 magnus = { path = ".", default-features = false, features = [
     "embed",
     "rb-sys",
     "bytes",
     "chrono",
+    "jiff-zoned",
     "io",
 ] }
 rb-sys = { version = "0.9.124", default-features = false, features = [

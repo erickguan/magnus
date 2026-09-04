@@ -2,8 +2,9 @@
 
 ## [Unreleased]
 ### Added
-- Automatic conversion between `jiff::Timestamp` and Ruby `Time` with
-  nanosecond precision.
+- Automatic, nanosecond-precision conversion between Ruby `Time` and
+  `jiff::Timestamp`, plus rule-preserving in-memory conversion between Ruby
+  `Time` and `jiff::Zoned` through Ruby's timezone-object protocol.
 - `Ruby::profile_frames` to collect a lightweight backtrace for profiling.
 - `Thread::profile_frames` to collect a lightweight backtrace for profiling a
   specific thread.
