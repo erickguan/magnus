@@ -397,8 +397,12 @@ See `magnus::TryConvert` for more details.
 
 Enable the `jiff` feature to convert Ruby `Time` values to `jiff::Timestamp`.
 Magnus ignores the Ruby `Time` timezone presentation and preserves the instant
-and nanoseconds. On platforms with a narrow native `time_t`, Ruby times outside
-the native `timespec` range cannot convert to `jiff::Timestamp`.
+and nanoseconds. Ruby times outside [Jiff's supported `Timestamp` range] raise
+`RangeError` with `"out of Time range"`. On platforms with a narrow native
+`time_t`, Ruby times outside the native `timespec` range also cannot convert to
+`jiff::Timestamp`.
+
+[Jiff's supported `Timestamp` range]: https://docs.rs/jiff/latest/jiff/struct.Timestamp.html#associatedconstant.MIN
 
 ##### ¶ `jiff::Zoned`
 
@@ -463,14 +467,37 @@ Ruby's instant-based arithmetic. `Time#utc_offset`, `Time#dst?`, and
 `Time#strftime("%Z")` report the offset, DST state, and abbreviation for the
 represented instant.
 
-The private timezone object does not support local civil-time construction or
-marshaling. Passing the private timezone object to `Time.new` raises
-`TypeError`, and passing the Ruby `Time` to `Marshal.dump` raises
-`NoMethodError`.
+Enabling `jiff-zoned` also integrates with Ruby's [Timezone Names] feature.
+Magnus installs `Time.find_timezone` when no resolver already exists, allowing
+core `Time` methods to resolve IANA names through Jiff:
+
+```ruby
+Time.now(in: "America/New_York")
+Time.at(1_704_941_204, in: "America/New_York")
+Time.at(1_704_941_204).getlocal("America/New_York")
+Time.new(2023, 12, 25, 0, 0, 0, in: "America/New_York")
+```
+
+The same resolver lets Ruby restore named and fixed-offset Jiff zones during
+`Marshal.load`. Magnus registers it when Ruby loads an extension using
+`#[magnus::init]`, or when Magnus initializes an embedded Ruby VM. Resolving a
+named zone requires that zone to be available in Jiff's global timezone
+database. If `Time.find_timezone` already exists, Magnus leaves it unchanged.
+
+The private timezone object exposes its IANA name through `name` and `to_s`, but
+it deliberately does not implement `to_str`. Ruby checks string coercion before
+`abbr` when formatting `%Z`; implementing `to_str` would replace abbreviations
+such as `EDT` with the IANA zone name.
+
+Because Ruby's timezone protocol does not specify how to resolve nonexistent
+local times in timezone gaps or repeated local times in timezone folds, Magnus
+rejects both with `ArgumentError` instead of choosing an instant implicitly.
+
+[Timezone Names]: https://docs.ruby-lang.org/en/master/Time.html#class-Time-label-Timezone+Names
 
 Ruby requires UTC offsets to fall strictly between `-24:00:00` and `+24:00:00`.
-Because `IntoValue` is infallible, converting a `Zoned` value whose current
-offset falls outside Ruby's range panics.
+If a `Zoned` value's current offset falls outside Ruby's range, Magnus emits a
+Ruby warning and returns the same instant as a UTC `Time` instead of panicking.
 
 Magnus does not automatically convert Jiff civil types because Jiff civil types
 represent unzoned wall-clock fields rather than instants. Magnus also leaves

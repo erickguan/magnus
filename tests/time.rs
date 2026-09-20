@@ -94,11 +94,7 @@ fn test_supports_jiff(ruby: &Ruby) -> Result<(), Error> {
     ] {
         let err = Timestamp::try_convert(value).unwrap_err();
         assert!(err.is_kind_of(ruby.exception_range_error()), "{err}");
-        assert!(
-            err.to_string()
-                .contains("time out of range for jiff::Timestamp"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("out of Time range"), "{err}");
     }
 
     Ok(())
@@ -111,6 +107,8 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
         tz::{Offset, TimeZone},
     };
     use magnus::{IntoValue, TryConvert};
+
+    assert!(ruby.class_time().respond_to("find_timezone", true)?);
 
     let new_york = TimeZone::get("America/New_York").unwrap();
     for (seconds, offset, abbreviation, dst) in [
@@ -151,21 +149,86 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
 
     let zone = before.funcall::<_, _, magnus::Value>("zone", ())?;
     assert!(zone.funcall::<_, _, bool>("frozen?", ())?);
+    assert_eq!(
+        zone.funcall::<_, _, String>("to_s", ())?,
+        "America/New_York"
+    );
+    assert_eq!(
+        zone.funcall::<_, _, String>("name", ())?,
+        "America/New_York"
+    );
+    assert!(!zone.respond_to("to_str", false)?);
     let zone_class = zone.funcall::<_, _, magnus::Value>("class", ())?;
     assert!(zone_class.funcall::<_, _, bool>("frozen?", ())?);
 
-    let kwargs = magnus::kwargs!(ruby, "in" => zone);
-    let err = ruby
+    let found: magnus::Value = ruby
         .class_time()
-        .funcall::<_, _, magnus::Value>("new", (2024, 11, 3, 1, 30, 0, kwargs))
-        .unwrap_err();
-    assert!(err.is_kind_of(ruby.exception_type_error()), "{err}");
+        .funcall("find_timezone", ("America/New_York",))?;
+    assert_eq!(
+        found.funcall::<_, _, String>("name", ())?,
+        "America/New_York"
+    );
+
+    for time in [
+        ruby.eval("Time.at(1704941204, in: 'America/New_York')")?,
+        ruby.eval("Time.at(1704941204).getlocal('America/New_York')")?,
+    ] {
+        let zoned = Zoned::try_convert(time)?;
+        assert_eq!(zoned.time_zone().iana_name(), Some("America/New_York"));
+        assert_eq!(zoned.offset().seconds(), -18_000);
+    }
+
+    let kwargs = magnus::kwargs!(ruby, "in" => zone);
+    let local: magnus::Value = ruby
+        .class_time()
+        .funcall("new", (2024, 1, 11, 2, 30, 0, kwargs))?;
+    rb_assert!(
+        ruby,
+        "t == Time.utc(2024, 1, 11, 7, 30) && t.hour == 2 && \
+         t.utc_offset == -18000 && !t.dst?",
+        t = local,
+    );
+    assert_eq!(
+        Zoned::try_convert(local)?.time_zone().iana_name(),
+        Some("America/New_York")
+    );
+
+    let named: magnus::Value =
+        ruby.eval("Time.new(2024, 1, 11, 2, 30, 0, in: 'America/New_York')")?;
+    assert_eq!(Zoned::try_convert(named)?, Zoned::try_convert(local)?);
+
+    let after_gap: magnus::Value =
+        ruby.eval("Time.new(2024, 3, 10, 3, 30, 0, in: 'America/New_York')")?;
+    rb_assert!(
+        ruby,
+        "t == Time.utc(2024, 3, 10, 7, 30) && t.utc_offset == -14400 && t.dst?",
+        t = after_gap,
+    );
+
+    let subsecond: magnus::Value = ruby.eval(
+        "Time.new(2024, 1, 11, 2, 30, 123456789/1000000000r, \
+         in: 'America/New_York')",
+    )?;
+    rb_assert!(ruby, "t.nsec == 123456789", t = subsecond);
+
+    for code in [
+        "Time.new(2024, 3, 10, 2, 30, 0, in: 'America/New_York')",
+        "Time.new(2024, 11, 3, 1, 30, 0, in: 'America/New_York')",
+    ] {
+        let err = ruby.eval::<magnus::Value>(code).unwrap_err();
+        assert!(err.is_kind_of(ruby.exception_arg_error()), "{err}");
+    }
 
     let marshal = ruby.eval::<magnus::Value>("Marshal")?;
-    let err = marshal
-        .funcall::<_, _, magnus::Value>("dump", (before,))
-        .unwrap_err();
-    assert!(err.is_kind_of(ruby.exception_no_method_error()), "{err}");
+    let dumped: magnus::Value = marshal.funcall("dump", (before,))?;
+    let loaded: magnus::Value = marshal.funcall("load", (dumped,))?;
+    assert_eq!(Zoned::try_convert(loaded)?, Zoned::try_convert(before)?);
+    rb_assert!(
+        ruby,
+        "loaded.zone.name == 'America/New_York' && loaded.nsec == before.nsec",
+        loaded,
+        before,
+    );
 
     for (timestamp, offset) in [
         ("2024-11-03T05:30:00Z", -14_400),
@@ -193,6 +256,9 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
         "t.utc_offset == 19800 && t.nsec == 123456789",
         t = fixed_time,
     );
+    let dumped: magnus::Value = marshal.funcall("dump", (fixed_time,))?;
+    let loaded: magnus::Value = marshal.funcall("load", (dumped,))?;
+    assert_eq!(Zoned::try_convert(loaded)?, fixed);
 
     for seconds in [-86_399, 86_399] {
         let offset = Offset::from_seconds(seconds).unwrap();
@@ -203,19 +269,8 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
     }
 
     for offset in [Offset::MIN, Offset::MAX] {
-        let zoned = Zoned::new(Timestamp::UNIX_EPOCH, TimeZone::fixed(offset));
-        let panic =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| zoned.into_value_with(ruby)))
-                .unwrap_err();
-        let message = panic
-            .downcast_ref::<String>()
-            .map(String::as_str)
-            .or_else(|| panic.downcast_ref::<&str>().copied())
-            .unwrap_or("");
-        assert!(
-            message.contains("cannot be represented by Ruby Time"),
-            "{message}"
-        );
+        let time = Zoned::new(Timestamp::UNIX_EPOCH, TimeZone::fixed(offset)).into_value_with(ruby);
+        rb_assert!(ruby, "t.utc? && t.to_i == 0", t = time);
     }
 
     let utc: magnus::Value = ruby.eval("Time.at(1654013280, in: 'UTC')")?;

@@ -94,7 +94,10 @@ pub unsafe fn setup() -> Cleanup {
                 if ruby_setup() != 0 {
                     panic!("Failed to setup Ruby");
                 };
-                Cleanup(Ruby::get_unchecked())
+                let cleanup = Cleanup(Ruby::get_unchecked());
+                crate::init_features(&cleanup.0)
+                    .unwrap_or_else(|err| panic!("failed to initialize Magnus: {err}"));
+                cleanup
             }
             Err(true) => panic!("Ruby already initialized"),
             r => panic!("unexpected INIT state {:?}", r),
