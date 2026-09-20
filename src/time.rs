@@ -748,21 +748,16 @@ impl TryConvert for Time {
 fn jiff_timestamp_from_value(val: Value) -> Result<jiff::Timestamp, Error> {
     let time = Time::try_convert(val)?;
     let ts = time.timespec()?;
-    jiff::Timestamp::new(
-        ts.tv_sec,
-        i32::try_from(ts.tv_nsec).map_err(|_| {
-            Error::new(
-                Ruby::get_with(val).exception_arg_error(),
-                "time nanoseconds out of range",
-            )
-        })?,
-    )
-    .map_err(|_| {
+    // Match CRuby's RangeError and message for an unrepresentable Time:
+    // https://github.com/ruby/ruby/blob/16abdbdf18933922c42bf1542f18e2cb8f191c80/time.c#L2782
+    let out_of_range = || {
         Error::new(
             Ruby::get_with(val).exception_range_error(),
             "out of Time range",
         )
-    })
+    };
+    let nanoseconds = i32::try_from(ts.tv_nsec).map_err(|_| out_of_range())?;
+    jiff::Timestamp::new(ts.tv_sec, nanoseconds).map_err(|_| out_of_range())
 }
 
 /// Converts a Ruby `Time` to a Jiff timestamp.
