@@ -171,6 +171,13 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
         "America/New_York"
     );
     assert!(!zone.respond_to("to_str", false)?);
+    let time_without_to_i = before.funcall::<_, _, magnus::Value>("+", (0,))?;
+    rb_assert!(
+        ruby,
+        "def t.to_i; raise 'Time#to_i called'; end; zone.abbr(t) == 'EST'",
+        t = time_without_to_i,
+        zone = zone,
+    );
     let zone_class = zone.funcall::<_, _, magnus::Value>("class", ())?;
     assert!(zone_class.funcall::<_, _, bool>("frozen?", ())?);
 
@@ -266,7 +273,7 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
     assert_eq!(Zoned::try_convert(fixed_time)?, fixed);
     rb_assert!(
         ruby,
-        "t.utc_offset == 19800 && t.nsec == 123456789",
+        "t.utc_offset == 19800 && t.nsec == 123456789 && t.zone.nil?",
         t = fixed_time,
     );
     let dumped: magnus::Value = marshal.funcall("dump", (fixed_time,))?;
@@ -278,8 +285,22 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
         let expected = Zoned::new(Timestamp::UNIX_EPOCH, TimeZone::fixed(offset));
         let time = expected.clone().into_value_with(ruby);
         assert_eq!(Zoned::try_convert(time)?, expected);
-        rb_assert!(ruby, "t.utc_offset == offset", t = time, offset = seconds);
+        rb_assert!(
+            ruby,
+            "t.utc_offset == offset && !t.utc? && t.zone.nil?",
+            t = time,
+            offset = seconds,
+        );
     }
+
+    let unknown = Zoned::new(Timestamp::UNIX_EPOCH, TimeZone::unknown());
+    let unknown_time = unknown.clone().into_value_with(ruby);
+    assert_eq!(Zoned::try_convert(unknown_time)?, unknown);
+    rb_assert!(
+        ruby,
+        "t.utc_offset == 0 && !t.utc? && !t.zone.nil?",
+        t = unknown_time,
+    );
 
     for offset in [Offset::MIN, Offset::MAX] {
         let time = Zoned::new(Timestamp::UNIX_EPOCH, TimeZone::fixed(offset)).into_value_with(ruby);

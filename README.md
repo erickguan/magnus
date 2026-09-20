@@ -409,7 +409,7 @@ and nanoseconds. Ruby times outside [Jiff's supported `Timestamp` range] raise
 Enable the `jiff-zoned` feature to convert Ruby `Time` values to `jiff::Zoned`.
 Magnus accepts the following Ruby values:
 
-- A Ruby `Time` carrying Magnus's private timezone object retains the original
+- A Ruby `Time` carrying Magnus's internal timezone object retains the original
   Jiff timezone without another database lookup.
 - A native UTC Ruby `Time` uses `jiff::tz::TimeZone::UTC`.
 - A numeric fixed-offset Ruby `Time` uses a fixed Jiff timezone.
@@ -459,13 +459,14 @@ Enable the `jiff-zoned` feature to convert `jiff::Zoned` to Ruby `Time`.
 Magnus creates one of the following Ruby values:
 
 - A `Zoned` value in UTC becomes a native UTC Ruby `Time`.
-- A `Zoned` value in any other Jiff timezone becomes a Ruby `Time` whose
-  `Time#zone` method returns a private, immutable Jiff-backed timezone object.
+- An explicit fixed-offset zone becomes a native fixed-offset Ruby `Time`.
+- Any other Jiff timezone becomes a Ruby `Time` with an anonymous, immutable
+  Jiff-backed timezone object.
 
-The private timezone object uses the original `jiff::tz::TimeZone` rules during
-Ruby's instant-based arithmetic. `Time#utc_offset`, `Time#dst?`, and
-`Time#strftime("%Z")` report the offset, DST state, and abbreviation for the
-represented instant.
+The internal timezone object implements Ruby's Timezone Objects protocol so
+core `Time` operations continue to use the original `jiff::tz::TimeZone` rules.
+`Time#utc_offset`, `Time#dst?`, and `Time#strftime("%Z")` report the offset, DST
+state, and abbreviation for the represented instant.
 
 Enabling `jiff-zoned` also integrates with Ruby's [Timezone Names] feature.
 Magnus installs `Time.find_timezone` when no resolver already exists, allowing
@@ -478,16 +479,18 @@ Time.at(1_704_941_204).getlocal("America/New_York")
 Time.new(2023, 12, 25, 0, 0, 0, in: "America/New_York")
 ```
 
-The same resolver lets Ruby restore named and fixed-offset Jiff zones during
-`Marshal.load`. Magnus registers it when Ruby loads an extension using
-`#[magnus::init]`, or when Magnus initializes an embedded Ruby VM. Resolving a
-named zone requires that zone to be available in Jiff's global timezone
-database. If `Time.find_timezone` already exists, Magnus leaves it unchanged.
+The same resolver lets Ruby restore named Jiff zones during `Marshal.load`.
+Ruby represents and marshals fixed-offset Jiff zones as native fixed-offset
+`Time` values, so they do not require name lookup. Magnus registers the resolver
+when Ruby loads an extension using `#[magnus::init]`, or when Magnus initializes
+an embedded Ruby VM. Resolving a named zone requires that zone to be available
+in Jiff's global timezone database. If `Time.find_timezone` already exists,
+Magnus leaves it unchanged.
 
-The private timezone object exposes its IANA name through `name` and `to_s`, but
-it deliberately does not implement `to_str`. Ruby checks string coercion before
-`abbr` when formatting `%Z`; implementing `to_str` would replace abbreviations
-such as `EDT` with the IANA zone name.
+The internal timezone object exposes its IANA name through `name` and `to_s`,
+but it deliberately does not implement `to_str`. Ruby checks string coercion
+before `abbr` when formatting `%Z`; implementing `to_str` would replace
+abbreviations such as `EDT` with the IANA zone name.
 
 Because Ruby's timezone protocol does not specify how to resolve nonexistent
 local times in timezone gaps or repeated local times in timezone folds, Magnus
