@@ -111,6 +111,19 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
     assert!(ruby.class_time().respond_to("find_timezone", true)?);
 
     let new_york = TimeZone::get("America/New_York").unwrap();
+
+    let without_time_at = Zoned::new(Timestamp::UNIX_EPOCH, new_york.clone());
+    ruby.eval::<magnus::Value>(
+        "class << Time; alias_method :__magnus_test_at, :at; \
+         def at(...) = raise('Time.at should not be called'); end",
+    )?;
+    let time = without_time_at.clone().into_value_with(ruby);
+    ruby.eval::<magnus::Value>(
+        "class << Time; alias_method :at, :__magnus_test_at; \
+         remove_method :__magnus_test_at; end",
+    )?;
+    assert_eq!(Zoned::try_convert(time)?, without_time_at);
+
     for (seconds, offset, abbreviation, dst) in [
         (1_720_493_204, -14_400, "EDT", true),
         (1_704_941_204, -18_000, "EST", false),

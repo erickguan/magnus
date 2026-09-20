@@ -33,10 +33,16 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+#[cfg(feature = "jiff-zoned")]
+use std::cell::Cell;
+
 use rb_sys::{
     VALUE, rb_time_nano_new, rb_time_new, rb_time_timespec, rb_time_timespec_new,
     rb_time_utc_offset, timespec,
 };
+
+#[cfg(feature = "jiff-zoned")]
+use rb_sys::{rb_rational_new, rb_time_num_new};
 
 #[cfg(feature = "jiff-zoned")]
 use crate::{
@@ -168,17 +174,22 @@ impl Ruby {
     }
 
     #[cfg(feature = "jiff-zoned")]
-    fn time_at_nano_in(&self, seconds: i64, nanoseconds: i32, zone: Value) -> Result<Time, Error> {
-        let kwargs = crate::kwargs!(self, "in" => zone);
-        self.class_time().funcall(
-            "at",
-            (
-                seconds,
-                i64::from(nanoseconds),
-                self.to_symbol("nsec"),
-                kwargs,
-            ),
-        )
+    fn time_from_jiff_timestamp_in(
+        &self,
+        timestamp: jiff::Timestamp,
+        offset_seconds: i32,
+        zone: Value,
+    ) -> Result<Time, Error> {
+        protect(|| unsafe {
+            // rb_time_num_new interprets a numeric value with a timezone object
+            // as local wall-clock time, so present the instant at its local offset.
+            let local_nanoseconds =
+                timestamp.as_nanosecond() + i128::from(offset_seconds) * 1_000_000_000_i128;
+            let numerator = self.into_value(local_nanoseconds);
+            let denominator = self.into_value(1_000_000_000_i64);
+            let time = rb_rational_new(numerator.as_rb_value(), denominator.as_rb_value());
+            Time::from_rb_value_unchecked(rb_time_num_new(time, zone.as_rb_value()))
+        })
     }
 }
 
@@ -436,21 +447,39 @@ const JIFF_RESOLVED_TIMESTAMP_IVAR: &str = "@__magnus_jiff_resolved_timestamp";
 #[cfg(feature = "jiff-zoned")]
 struct JiffTimeZone {
     time_zone: jiff::tz::TimeZone,
+    // Supplies the exact source instant to rb_time_num_new's local_to_utc
+    // callback, including when the local wall-clock time is in a fold.
+    initial_timestamp: Cell<Option<jiff::Timestamp>>,
 }
 
 #[cfg(feature = "jiff-zoned")]
 impl JiffTimeZone {
     fn new(time_zone: jiff::tz::TimeZone) -> Self {
-        Self { time_zone }
+        Self {
+            time_zone,
+            initial_timestamp: Cell::new(None),
+        }
+    }
+
+    fn new_for_timestamp(time_zone: jiff::tz::TimeZone, timestamp: jiff::Timestamp) -> Self {
+        Self {
+            time_zone,
+            initial_timestamp: Cell::new(Some(timestamp)),
+        }
     }
 
     fn local_to_utc(&self, tm: Value) -> Result<i64, Error> {
-        let datetime = jiff_datetime_from_time_like(tm)?;
-        let timestamp = self
-            .time_zone
-            .to_ambiguous_timestamp(datetime)
-            .unambiguous()
-            .map_err(|err| Error::new(Ruby::get_with(tm).exception_arg_error(), err.to_string()))?;
+        let timestamp = if let Some(timestamp) = self.initial_timestamp.take() {
+            timestamp
+        } else {
+            let datetime = jiff_datetime_from_time_like(tm)?;
+            self.time_zone
+                .to_ambiguous_timestamp(datetime)
+                .unambiguous()
+                .map_err(|err| {
+                    Error::new(Ruby::get_with(tm).exception_arg_error(), err.to_string())
+                })?
+        };
         tm.funcall::<_, _, Value>(
             "instance_variable_set",
             (JIFF_RESOLVED_TIMESTAMP_IVAR, timestamp.as_second()),
@@ -645,13 +674,13 @@ impl IntoValue for jiff::Zoned {
         if self.time_zone() == &jiff::tz::TimeZone::UTC {
             return ruby.time_from_jiff_timestamp(timestamp).as_value();
         }
-        let zone = ruby.obj_wrap(JiffTimeZone::new(self.time_zone().clone()));
+        let zone = ruby.obj_wrap(JiffTimeZone::new_for_timestamp(
+            self.time_zone().clone(),
+            timestamp,
+        ));
         zone.freeze();
-        match ruby.time_at_nano_in(
-            timestamp.as_second(),
-            timestamp.subsec_nanosecond(),
-            zone.as_value(),
-        ) {
+        match ruby.time_from_jiff_timestamp_in(timestamp, self.offset().seconds(), zone.as_value())
+        {
             Ok(time) => time.as_value(),
             Err(err) => {
                 ruby.warning(&format!(
