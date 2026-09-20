@@ -1911,9 +1911,10 @@ use crate::{
 /// initializes an extension. This function returns errors so the generated
 /// code can raise them through Ruby's extension-loading machinery.
 #[doc(hidden)]
-pub fn init_features(_ruby: &Ruby) -> Result<(), Error> {
+#[cfg_attr(not(feature = "jiff-zoned"), allow(unused_variables))]
+pub fn init_features(ruby: &Ruby) -> Result<(), Error> {
     #[cfg(feature = "jiff-zoned")]
-    time::init(_ruby)?;
+    time::init(ruby)?;
     Ok(())
 }
 
