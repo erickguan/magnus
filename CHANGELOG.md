@@ -4,8 +4,9 @@
 ### Added
 - Automatic, nanosecond-precision conversion between Ruby `Time` and
   `jiff::Timestamp`, plus rule-preserving conversion between Ruby `Time` and
-  `jiff::Zoned` through Ruby's timezone-object protocol, including Jiff-backed
-  timezone-name lookup and Marshal restoration.
+  `jiff::Zoned` through Ruby's timezone-object protocol, including the Ruby
+  `Jiff::TimeZone` class with IANA, UTC, fixed-offset, POSIX, and unknown
+  timezone constructors, timezone-name lookup, and Marshal restoration.
 - `Ruby::profile_frames` to collect a lightweight backtrace for profiling.
 - `Thread::profile_frames` to collect a lightweight backtrace for profiling a
   specific thread.

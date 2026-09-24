@@ -409,8 +409,8 @@ and nanoseconds. Ruby times outside [Jiff's supported `Timestamp` range] raise
 Enable the `jiff-zoned` feature to convert Ruby `Time` values to `jiff::Zoned`.
 Magnus accepts the following Ruby values:
 
-- A Ruby `Time` carrying Magnus's internal timezone object retains the original
-  Jiff timezone without another database lookup.
+- A Ruby `Time` carrying a `Jiff::TimeZone` object retains the original Jiff
+  timezone without another database lookup.
 - A native UTC Ruby `Time` uses `jiff::tz::TimeZone::UTC`.
 - A numeric fixed-offset Ruby `Time` uses a fixed Jiff timezone.
 
@@ -460,11 +460,11 @@ Magnus creates one of the following Ruby values:
 
 - A `Zoned` value in UTC becomes a native UTC Ruby `Time`.
 - An explicit fixed-offset zone becomes a native fixed-offset Ruby `Time`.
-- Any other Jiff timezone becomes a Ruby `Time` with an anonymous, immutable
-  Jiff-backed timezone object.
+- Any other Jiff timezone becomes a Ruby `Time` with an immutable
+  `Jiff::TimeZone` object.
 
-The internal timezone object implements Ruby's Timezone Objects protocol so
-core `Time` operations continue to use the original `jiff::tz::TimeZone` rules.
+`Jiff::TimeZone` implements Ruby's Timezone Objects protocol, so core `Time`
+operations continue to use the original `jiff::tz::TimeZone` rules.
 `Time#utc_offset`, `Time#dst?`, and `Time#strftime("%Z")` report the offset, DST
 state, and abbreviation for the represented instant.
 
@@ -487,10 +487,32 @@ an embedded Ruby VM. Resolving a named zone requires that zone to be available
 in Jiff's global timezone database. If `Time.find_timezone` already exists,
 Magnus leaves it unchanged.
 
-The internal timezone object exposes its IANA name through `name` and `to_s`,
-but it deliberately does not implement `to_str`. Ruby checks string coercion
-before `abbr` when formatting `%Z`; implementing `to_str` would replace
-abbreviations such as `EDT` with the IANA zone name.
+Load an IANA timezone directly from Jiff's global timezone database with
+`Jiff::TimeZone.get`:
+
+```ruby
+zone = Jiff::TimeZone.get("America/New_York")
+Time.now(in: zone)
+```
+
+`Jiff::TimeZone` also exposes Jiff's other core timezone representations:
+
+```ruby
+Jiff::TimeZone.utc
+Jiff::TimeZone.fixed(19_800) # Seconds east of UTC.
+Jiff::TimeZone.posix("EST5EDT,M3.2.0,M11.1.0")
+Jiff::TimeZone.unknown      # Behaves like UTC but retains unknown identity.
+```
+
+Each constructor returns an immutable timezone object. Invalid IANA names,
+offsets, and POSIX rules raise `ArgumentError`. `iana_name` returns the IANA name
+or `nil` for another kind of timezone. The Timezone Objects protocol methods
+provide local and UTC conversion, abbreviation, and DST behavior.
+
+`name` and `to_s` expose an IANA name for named zones, but `Jiff::TimeZone`
+deliberately does not implement `to_str`. Ruby checks string coercion before
+`abbr` when formatting `%Z`; implementing `to_str` would replace abbreviations
+such as `EDT` with the IANA zone name.
 
 Because Ruby's timezone protocol does not specify how to resolve nonexistent
 local times in timezone gaps or repeated local times in timezone folds, Magnus
