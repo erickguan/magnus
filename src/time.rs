@@ -545,7 +545,7 @@ impl JiffTimeZone {
 
     /// Converts a known instant to local time with the applicable Jiff offset.
     fn utc_to_local(&self, tm: Value) -> Result<i64, Error> {
-        let timestamp = jiff_timestamp_from_utc_time_like(tm)?;
+        let timestamp = jiff_timestamp_from_time_like(tm)?;
         let offset = self.time_zone.to_offset_info(timestamp).offset();
         timestamp
             .as_second()
@@ -556,6 +556,11 @@ impl JiffTimeZone {
                     "out of Time range",
                 )
             })
+    }
+
+    /// Returns the IANA name, or `nil` for another kind of timezone.
+    fn iana_name(&self) -> Option<String> {
+        self.time_zone.iana_name().map(str::to_owned)
     }
 
     /// Returns a restorable name for an IANA zone.
@@ -576,10 +581,61 @@ impl JiffTimeZone {
     }
 
     fn to_s(&self) -> String {
-        self.time_zone
-            .iana_name()
-            .unwrap_or("Jiff timezone")
-            .to_owned()
+        if let Some(name) = self.time_zone.iana_name() {
+            return name.to_owned();
+        }
+        if self.time_zone == jiff::tz::TimeZone::UTC {
+            return "UTC".to_owned();
+        }
+        if self.time_zone.is_unknown() {
+            return "Etc/Unknown".to_owned();
+        }
+        if let Ok(offset) = self.time_zone.to_fixed_offset() {
+            return offset.to_string();
+        }
+        "Jiff timezone".to_owned()
+    }
+
+    fn wrap(ruby: &Ruby, time_zone: jiff::tz::TimeZone) -> Obj<Self> {
+        let zone = ruby.obj_wrap(Self::new(time_zone));
+        zone.freeze();
+        zone
+    }
+
+    /// Returns the UTC timezone.
+    fn utc(ruby: &Ruby) -> Obj<Self> {
+        Self::wrap(ruby, jiff::tz::TimeZone::UTC)
+    }
+
+    /// Returns Jiff's unknown timezone, which behaves like UTC.
+    fn unknown(ruby: &Ruby) -> Obj<Self> {
+        Self::wrap(ruby, jiff::tz::TimeZone::unknown())
+    }
+
+    /// Creates a fixed-offset timezone.
+    ///
+    /// # Arguments
+    ///
+    /// * `seconds` - The offset from UTC in seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArgumentError` if Jiff cannot represent the offset.
+    fn fixed(ruby: &Ruby, seconds: i32) -> Result<Obj<Self>, Error> {
+        let offset = jiff::tz::Offset::from_seconds(seconds)
+            .map_err(|err| Error::new(ruby.exception_arg_error(), err.to_string()))?;
+        Ok(Self::wrap(ruby, jiff::tz::TimeZone::fixed(offset)))
+    }
+
+    /// Parses a POSIX TZ string into a timezone.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArgumentError` if Jiff cannot parse the rule.
+    fn posix(ruby: &Ruby, rule: String) -> Result<Obj<Self>, Error> {
+        let time_zone = jiff::tz::TimeZone::posix(&rule)
+            .map_err(|err| Error::new(ruby.exception_arg_error(), err.to_string()))?;
+        Ok(Self::wrap(ruby, time_zone))
     }
 
     /// Loads an IANA timezone from Jiff's global timezone database.
@@ -594,9 +650,7 @@ impl JiffTimeZone {
     fn get(ruby: &Ruby, name: String) -> Result<Obj<Self>, Error> {
         let time_zone = jiff::tz::TimeZone::get(&name)
             .map_err(|err| Error::new(ruby.exception_arg_error(), err.to_string()))?;
-        let zone = ruby.obj_wrap(Self::new(time_zone));
-        zone.freeze();
-        Ok(zone)
+        Ok(Self::wrap(ruby, time_zone))
     }
 
     fn find_timezone(ruby: &Ruby, name: String) -> Option<Obj<Self>> {
@@ -609,6 +663,10 @@ impl JiffTimeZone {
         let class = jiff.define_class("TimeZone", ruby.class_object())?;
         class.undef_default_alloc_func();
         class.define_singleton_method("get", crate::function!(JiffTimeZone::get, 1))?;
+        class.define_singleton_method("utc", crate::function!(JiffTimeZone::utc, 0))?;
+        class.define_singleton_method("unknown", crate::function!(JiffTimeZone::unknown, 0))?;
+        class.define_singleton_method("fixed", crate::function!(JiffTimeZone::fixed, 1))?;
+        class.define_singleton_method("posix", crate::function!(JiffTimeZone::posix, 1))?;
         class.define_method(
             "local_to_utc",
             crate::method!(JiffTimeZone::local_to_utc, 1),
@@ -620,6 +678,7 @@ impl JiffTimeZone {
         class.define_method("abbr", crate::method!(JiffTimeZone::abbr, 1))?;
         class.define_method("dst?", crate::method!(JiffTimeZone::is_dst, 1))?;
         class.define_method("name", crate::method!(JiffTimeZone::name, 0))?;
+        class.define_method("iana_name", crate::method!(JiffTimeZone::iana_name, 0))?;
         class.define_method("to_s", crate::method!(JiffTimeZone::to_s, 0))?;
         Ok(class)
     }
@@ -637,14 +696,11 @@ impl JiffTimeZone {
     ///
     /// # Arguments
     ///
-    /// * `tm` - The Time-like object CRuby supplies. Its civil fields represent
-    ///   UTC during a UTC-to-local callback. After a local-to-UTC callback, it
-    ///   carries the instant resolved by `local_to_utc`.
+    /// * `tm` - The Time-like object CRuby supplies. After a local-to-UTC
+    ///   callback, it carries the instant resolved by `local_to_utc`.
     ///
     /// # Errors
     ///
-    /// - Returns `ArgumentError` if the civil fields do not form a valid Jiff
-    ///   datetime.
     /// - Returns `RangeError` if the time falls outside Jiff's supported range.
     /// - Propagates other errors from accessing or converting `tm`.
     fn is_dst(&self, tm: Value) -> Result<bool, Error> {
@@ -660,7 +716,7 @@ impl JiffTimeZone {
                     "out of Time range",
                 )
             })?,
-            None => jiff_timestamp_from_utc_time_like(tm)?,
+            None => jiff_timestamp_from_time_like(tm)?,
         };
         Ok(self.time_zone.to_offset_info(timestamp).dst().is_dst())
     }
@@ -698,18 +754,6 @@ fn jiff_datetime_from_time_like(tm: Value) -> Result<jiff::civil::DateTime, Erro
         0,
     );
     datetime.map_err(|err| Error::new(Ruby::get_with(tm).exception_arg_error(), err.to_string()))
-}
-
-/// Converts the UTC civil fields from a timezone callback to a Jiff timestamp.
-#[cfg(feature = "jiff-zoned")]
-fn jiff_timestamp_from_utc_time_like(tm: Value) -> Result<jiff::Timestamp, Error> {
-    let datetime = jiff_datetime_from_time_like(tm)?;
-    jiff::tz::Offset::UTC.to_timestamp(datetime).map_err(|_| {
-        Error::new(
-            Ruby::get_with(tm).exception_range_error(),
-            "out of Time range",
-        )
-    })
 }
 
 #[cfg(feature = "jiff")]

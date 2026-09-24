@@ -174,7 +174,8 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
     let time_without_to_i = before.funcall::<_, _, magnus::Value>("+", (0,))?;
     rb_assert!(
         ruby,
-        "def t.to_i; raise 'Time#to_i called'; end; zone.abbr(t) == 'EST'",
+        "def t.to_i; raise 'Time#to_i called'; end; \
+         zone.abbr(t) == 'EST' && !zone.dst?(t)",
         t = time_without_to_i,
         zone = zone,
     );
@@ -189,6 +190,10 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
     assert_eq!(
         exposed.funcall::<_, _, String>("name", ())?,
         "America/New_York"
+    );
+    assert_eq!(
+        exposed.funcall::<_, _, Option<String>>("iana_name", ())?,
+        Some("America/New_York".to_owned())
     );
     let exposed_time: magnus::Value = ruby.class_time().funcall(
         "at",
@@ -206,6 +211,58 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
         .eval::<magnus::Value>("Jiff::TimeZone.new")
         .unwrap_err();
     assert!(err.is_kind_of(ruby.exception_type_error()), "{err}");
+
+    let utc_zone: magnus::Value = ruby.eval("Jiff::TimeZone.utc")?;
+    rb_assert!(
+        ruby,
+        "zone.frozen? && zone.to_s == 'UTC' && zone.iana_name == 'UTC'",
+        zone = utc_zone,
+    );
+    let fixed_zone: magnus::Value = ruby.eval("Jiff::TimeZone.fixed(19800)")?;
+    let fixed_zone_time: magnus::Value = ruby.class_time().funcall(
+        "at",
+        (
+            Timestamp::UNIX_EPOCH.as_second(),
+            magnus::kwargs!(ruby, "in" => fixed_zone),
+        ),
+    )?;
+    rb_assert!(
+        ruby,
+        "t.utc_offset == 19800 && t.zone.equal?(zone) && zone.to_s == '+05:30'",
+        t = fixed_zone_time,
+        zone = fixed_zone,
+    );
+    assert_eq!(
+        Zoned::try_convert(fixed_zone_time)?
+            .time_zone()
+            .to_fixed_offset()
+            .unwrap()
+            .seconds(),
+        19_800
+    );
+    let posix_zone: magnus::Value = ruby.eval("Jiff::TimeZone.posix('EST5EDT,M3.2.0,M11.1.0')")?;
+    let posix_time: magnus::Value = ruby.class_time().funcall(
+        "at",
+        (1_720_493_204, magnus::kwargs!(ruby, "in" => posix_zone)),
+    )?;
+    rb_assert!(
+        ruby,
+        "t.utc_offset == -14400 && t.strftime('%Z') == 'EDT' && t.dst?",
+        t = posix_time,
+    );
+    let unknown_zone: magnus::Value = ruby.eval("Jiff::TimeZone.unknown")?;
+    rb_assert!(
+        ruby,
+        "zone.frozen? && zone.to_s == 'Etc/Unknown' && zone.iana_name.nil?",
+        zone = unknown_zone,
+    );
+    for code in [
+        "Jiff::TimeZone.fixed(100000)",
+        "Jiff::TimeZone.posix('not a POSIX rule')",
+    ] {
+        let err = ruby.eval::<magnus::Value>(code).unwrap_err();
+        assert!(err.is_kind_of(ruby.exception_arg_error()), "{code}: {err}");
+    }
 
     let found: magnus::Value = ruby
         .class_time()
