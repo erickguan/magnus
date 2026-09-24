@@ -186,10 +186,6 @@ impl Ruby {
     }
 
     /// Creates a Ruby `Time` for a known instant and Jiff timezone object.
-    ///
-    /// `rb_time_num_new` calls the zone's `local_to_utc` method. Magnus creates
-    /// the zone with `JiffTimeZone::new_for_timestamp`, which stores the known
-    /// instant for `local_to_utc` to consume.
     #[cfg(feature = "jiff-zoned")]
     fn time_from_jiff_timestamp_in(
         &self,
@@ -205,6 +201,8 @@ impl Ruby {
             let numerator = self.into_value(local_nanoseconds);
             let denominator = self.into_value(NANOSECONDS_PER_SECOND);
             let time = rb_rational_new(numerator.as_rb_value(), denominator.as_rb_value());
+            // rb_time_num_new calls local_to_utc, which consumes the known
+            // instant stored by JiffTimeZone::new_for_timestamp.
             Time::from_rb_value_unchecked(rb_time_num_new(time, zone.as_rb_value()))
         })
     }
@@ -460,7 +458,7 @@ pub(crate) fn init(ruby: &Ruby) -> Result<(), Error> {
 // timezone object:
 // https://github.com/ruby/ruby/blob/edce07a8c93895be8eeb2d27400aa138cc8a3cf9/time.c#L2432-L2461
 #[cfg(feature = "jiff-zoned")]
-const JIFF_RESOLVED_TIMESTAMP_IVAR: &str = "@__magnus_jiff_resolved_timestamp";
+const JIFF_RESOLVED_TIMESTAMP_IVAR: &str = "@_resolved_ts";
 
 /// Wraps Jiff's timezone rules in a Ruby timezone object.
 ///
