@@ -8,9 +8,9 @@
 //! [Jiff's supported timestamp range][jiff-timestamp-range].
 //!
 //! With the `jiff-zoned` feature, [`jiff::Zoned`] also converts in both
-//! directions. Magnus preserves Jiff's timezone rules behind an internal,
-//! immutable Ruby [timezone object][ruby-timezones]. The internal object
-//! supports instant-based Ruby arithmetic, timezone names, unambiguous local
+//! directions. Magnus preserves Jiff's timezone rules in an immutable Ruby
+//! `Jiff::TimeZone` [timezone object][ruby-timezones]. The object supports
+//! instant-based Ruby arithmetic, timezone names, unambiguous local
 //! civil-time construction, and `Marshal` for named and fixed-offset zones.
 //! Local times in timezone gaps or folds raise `ArgumentError`. UTC and
 //! fixed-offset Ruby times can also become `jiff::Zoned`. Magnus rejects other
@@ -442,6 +442,7 @@ impl IntoValue for jiff::Timestamp {
 #[cfg(feature = "jiff-zoned")]
 #[allow(clippy::macro_metavars_in_unsafe, unused_imports, unused_variables)]
 pub(crate) fn init(ruby: &Ruby) -> Result<(), Error> {
+    JiffTimeZone::create_class(ruby)?;
     let time = ruby.class_time();
     if !time.respond_to("find_timezone", true)? {
         time.define_singleton_method(
@@ -460,7 +461,7 @@ pub(crate) fn init(ruby: &Ruby) -> Result<(), Error> {
 #[cfg(feature = "jiff-zoned")]
 const JIFF_RESOLVED_TIMESTAMP_IVAR: &str = "@_resolved_ts";
 
-/// Wraps Jiff's timezone rules in a Ruby timezone object.
+/// Wraps Jiff's timezone rules as a Ruby `Jiff::TimeZone` object.
 ///
 /// Magnus attaches this object to a Ruby `Time` as its timezone object; the
 /// object is not itself a `Time`. Magnus can convert a `Time` with this
@@ -581,17 +582,33 @@ impl JiffTimeZone {
             .to_owned()
     }
 
-    fn find_timezone(ruby: &Ruby, name: String) -> Option<Obj<Self>> {
-        let time_zone = jiff::tz::TimeZone::get(&name).ok()?;
+    /// Loads an IANA timezone from Jiff's global timezone database.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The IANA timezone name to load.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArgumentError` if Jiff cannot find the timezone.
+    fn get(ruby: &Ruby, name: String) -> Result<Obj<Self>, Error> {
+        let time_zone = jiff::tz::TimeZone::get(&name)
+            .map_err(|err| Error::new(ruby.exception_arg_error(), err.to_string()))?;
         let zone = ruby.obj_wrap(Self::new(time_zone));
         zone.freeze();
-        Some(zone)
+        Ok(zone)
+    }
+
+    fn find_timezone(ruby: &Ruby, name: String) -> Option<Obj<Self>> {
+        Self::get(ruby, name).ok()
     }
 
     #[allow(clippy::macro_metavars_in_unsafe, unused_imports, unused_variables)]
     fn create_class(ruby: &Ruby) -> Result<RClass, Error> {
-        let class = RClass::new(ruby.class_object())?;
+        let jiff = ruby.define_module("Jiff")?;
+        let class = jiff.define_class("TimeZone", ruby.class_object())?;
         class.undef_default_alloc_func();
+        class.define_singleton_method("get", crate::function!(JiffTimeZone::get, 1))?;
         class.define_method(
             "local_to_utc",
             crate::method!(JiffTimeZone::local_to_utc, 1),
@@ -604,7 +621,6 @@ impl JiffTimeZone {
         class.define_method("dst?", crate::method!(JiffTimeZone::is_dst, 1))?;
         class.define_method("name", crate::method!(JiffTimeZone::name, 0))?;
         class.define_method("to_s", crate::method!(JiffTimeZone::to_s, 0))?;
-        class.freeze();
         Ok(class)
     }
 

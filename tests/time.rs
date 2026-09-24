@@ -179,7 +179,33 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
         zone = zone,
     );
     let zone_class = zone.funcall::<_, _, magnus::Value>("class", ())?;
-    assert!(zone_class.funcall::<_, _, bool>("frozen?", ())?);
+    assert_eq!(
+        zone_class.funcall::<_, _, String>("name", ())?,
+        "Jiff::TimeZone"
+    );
+
+    let exposed: magnus::Value = ruby.eval("Jiff::TimeZone.get('America/New_York')")?;
+    assert!(exposed.funcall::<_, _, bool>("frozen?", ())?);
+    assert_eq!(
+        exposed.funcall::<_, _, String>("name", ())?,
+        "America/New_York"
+    );
+    let exposed_time: magnus::Value = ruby.class_time().funcall(
+        "at",
+        (1_704_941_204, magnus::kwargs!(ruby, "in" => exposed)),
+    )?;
+    assert_eq!(
+        Zoned::try_convert(exposed_time)?.time_zone().iana_name(),
+        Some("America/New_York")
+    );
+    let err = ruby
+        .eval::<magnus::Value>("Jiff::TimeZone.get('Not/A_Zone')")
+        .unwrap_err();
+    assert!(err.is_kind_of(ruby.exception_arg_error()), "{err}");
+    let err = ruby
+        .eval::<magnus::Value>("Jiff::TimeZone.new")
+        .unwrap_err();
+    assert!(err.is_kind_of(ruby.exception_type_error()), "{err}");
 
     let found: magnus::Value = ruby
         .class_time()
@@ -187,6 +213,12 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
     assert_eq!(
         found.funcall::<_, _, String>("name", ())?,
         "America/New_York"
+    );
+    assert_eq!(
+        found
+            .funcall::<_, _, magnus::Value>("class", ())?
+            .funcall::<_, _, String>("name", ())?,
+        "Jiff::TimeZone"
     );
 
     for time in [
