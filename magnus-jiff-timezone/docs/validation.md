@@ -35,8 +35,10 @@ the native library was installed under the temporary gem directory.
 The crate lives on the separate `magnus-jiff-timezone` bookmark, based on the
 Timestamp-only `jiff` work. The core Magnus timezone implementation remains
 absent. Only the workspace membership, dependency lockfile, and root README
-change outside the new crate in the original implementation. The standalone
-revision also adds a dedicated packaged-gem CI job and updates the root README.
+change outside the new crate. We prepared a dedicated packaged-gem CI job, but
+GitHub rejected pushing workflow changes with the available OAuth credentials.
+We kept that job as a local patch and left the existing workflow unchanged.
+The standalone install-and-test task remains available through Rake.
 
 ## Coverage
 
@@ -83,8 +85,8 @@ after that cleanup. The final formatting and whitespace checks also pass.
 
 ## Review
 
-We ran independent Standards and Spec reviews of `jiff...b14ae927`, covering
-the complete timezone follow-up through standalone packaging. Neither found a
+We ran independent Standards and Spec reviews of the complete timezone
+follow-up through standalone packaging. Neither found a
 confirmed blocker or documented-standard violation. The Spec review noted
 that installation evidence was pending and requested coverage for local-time
 nanoseconds. The successful isolated install supplies that evidence, and the
