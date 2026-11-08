@@ -1,0 +1,96 @@
+# frozen_string_literal: true
+
+require "minitest/autorun"
+require "open3"
+require "rbconfig"
+require "magnus-jiff-timezone"
+
+class TimezoneTest < Minitest::Test
+  def test_require_registers_once
+    assert_kind_of Class, MagnusTimezone
+    assert_respond_to Time, :find_timezone
+    refute require("magnus-jiff-timezone")
+    assert_equal "Asia/Tokyo", Time.find_timezone("Asia/Tokyo").name
+  end
+
+  def test_lookup_returns_frozen_objects
+    zone = MagnusTimezone.find_timezone("America/New_York")
+    assert_instance_of MagnusTimezone, zone
+    assert_predicate zone, :frozen?
+    assert_equal "America/New_York", zone.iana_name
+    assert_equal "America/New_York", zone.to_s
+    assert_nil MagnusTimezone.find_timezone("Not/A_Zone")
+    assert_nil Time.find_timezone("Not/A_Zone")
+    assert_raises(TypeError) { MagnusTimezone.new }
+    assert_raises(TypeError) { MagnusTimezone.allocate }
+  end
+
+  def test_named_zone_preserves_nanoseconds_and_observes_dst
+    winter = Time.at(1_704_941_204, 123_456_789, :nsec, in: "America/New_York")
+    summer = Time.at(1_720_493_204, 123_456_789, :nsec, in: "America/New_York")
+    assert_equal 123_456_789, summer.nsec
+    assert_equal(-18_000, winter.utc_offset)
+    assert_equal(-14_400, summer.utc_offset)
+    refute_predicate winter, :dst?
+    assert_predicate summer, :dst?
+    assert_equal "EST", winter.strftime("%Z")
+    assert_equal "EDT", summer.strftime("%Z")
+  end
+
+  def test_arithmetic_uses_transition_rules
+    before = Time.at(Time.utc(2024, 3, 10, 6, 30).to_i, in: "America/New_York")
+    after = before + 3_600
+    assert_equal 1, before.hour
+    assert_equal 3, after.hour
+    assert_same before.zone, after.zone
+    assert_equal(-14_400, after.utc_offset)
+  end
+
+  def test_local_construction_rejects_gaps_and_folds
+    assert_raises(ArgumentError) { Time.new(2024, 3, 10, 2, 30, 0, in: "America/New_York") }
+    assert_raises(ArgumentError) { Time.new(2024, 11, 3, 1, 30, 0, in: "America/New_York") }
+    early = Time.at(Time.utc(2024, 11, 3, 5, 30).to_i, in: "America/New_York")
+    late = Time.at(Time.utc(2024, 11, 3, 6, 30).to_i, in: "America/New_York")
+    assert_equal [1, 1], [early.hour, late.hour]
+    assert_equal [-14_400, -18_000], [early.utc_offset, late.utc_offset]
+  end
+
+  def test_fixed_utc_posix_and_unknown_constructors
+    fixed = Time.at(0, in: MagnusTimezone.fixed(19_800))
+    assert_equal 19_800, fixed.utc_offset
+    assert_equal 0, Time.at(0, in: MagnusTimezone.utc).utc_offset
+    unknown = Time.at(0, in: MagnusTimezone.unknown)
+    assert_equal "Etc/Unknown", unknown.zone.to_s
+    assert_equal 0, unknown.utc_offset
+    zone = MagnusTimezone.posix("EST5EDT,M3.2.0,M11.1.0")
+    assert_equal(-18_000, Time.new(2024, 1, 1, in: zone).utc_offset)
+    assert_equal(-14_400, Time.new(2024, 7, 1, in: zone).utc_offset)
+    assert_raises(ArgumentError) { MagnusTimezone.fixed(100_000) }
+    assert_raises(ArgumentError) { MagnusTimezone.posix("not a POSIX rule") }
+  end
+
+  def test_marshal_restores_named_and_native_fixed_zones
+    named = Time.at(1_720_493_204, 123_456_789, :nsec, in: "America/New_York")
+    restored = Marshal.load(Marshal.dump(named))
+    assert_equal named, restored
+    assert_equal named.nsec, restored.nsec
+    assert_instance_of MagnusTimezone, restored.zone
+    assert_equal "America/New_York", restored.zone.name
+    fixed = Time.at(0, in: "+05:30")
+    assert_equal fixed.utc_offset, Marshal.load(Marshal.dump(fixed)).utc_offset
+    code = <<~RUBY
+      require "magnus-jiff-timezone"
+      time = Marshal.load(STDIN.read)
+      puts [time.zone.name, time.nsec, time.utc_offset].join(",")
+    RUBY
+    output, status = Open3.capture2e(RbConfig.ruby, "-e", code, stdin_data: Marshal.dump(named))
+    assert status.success?, output
+    assert_equal "America/New_York,123456789,-14400", output.strip
+  end
+
+  def test_non_iana_marshal_limits
+    [MagnusTimezone.unknown, MagnusTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
+      assert_raises(TypeError) { Marshal.dump(Time.at(0, in: zone)) }
+    end
+  end
+end

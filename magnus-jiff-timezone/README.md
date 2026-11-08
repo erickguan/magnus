@@ -1,50 +1,27 @@
 # magnus-jiff-timezone
 
-Use Jiff's timezone rules with Ruby `Time` from a Magnus extension. The crate
-bundles IANA timezone data and exposes the public Ruby class
-`MagnusTimezone`.
+We provide a standalone Ruby gem that uses Jiff's timezone rules with Ruby
+`Time`. We always bundle IANA timezone data, so you do not need another timezone
+gem or a system timezone database.
 
-## Register from your extension
+## Install and use
 
-```rust
-use magnus::{Error, Ruby};
-use magnus_jiff_timezone::Zoned;
+Install a built source gem with RubyGems, then require it:
 
-fn identity(time: Zoned) -> Zoned {
-    // Access raw Jiff through time.as_inner(), or consume it with into_inner().
-    time
-}
-
-#[magnus::init]
-fn init(ruby: &Ruby) -> Result<(), Error> {
-    magnus_jiff_timezone::register(ruby)?;
-    ruby.define_global_function("jiff_identity", magnus::function!(identity, 1))?;
-    Ok(())
-}
+```sh
+gem install ./magnus-jiff-timezone-0.1.0.gem
 ```
 
-Registration defines the class and `Time.find_timezone`. Call it explicitly
-before returning named, POSIX, or unknown zones. Magnus itself performs no
-extra initialization.
-
-The Rust `Zoned` wrapper enables automatic Magnus argument and return
-conversions. A separate crate cannot implement Magnus's traits directly for
-Jiff's types because of Rust's orphan rules. This wrapper owns those trait
-implementations and adds no heap allocation of its own. Use
-`Zoned::from(jiff_value)`, `as_inner()`, and `into_inner()` to move between the
-wrapper and `jiff::Zoned`. Ruby callers continue to use ordinary `Time` objects.
-
-## Ruby constructors and conversions
-
 ```ruby
+require "magnus-jiff-timezone"
+
 zone = MagnusTimezone.find_timezone("America/New_York")
 time = Time.new(2024, 7, 1, 12, 0, 0, in: zone)
 time.utc_offset # => -14400
 time.dst?       # => true
 time.strftime("%Z") # => "EDT"
-jiff_identity(time) == time # => true
 
-# Time.find_timezone also allows names in Ruby's Time constructors.
+# Loading the gem also installs Time.find_timezone.
 Time.at(0, in: "Asia/Tokyo")
 
 MagnusTimezone.utc
@@ -53,26 +30,37 @@ MagnusTimezone.posix("EST5EDT,M3.2.0,M11.1.0")
 MagnusTimezone.unknown
 ```
 
-Unknown IANA names return `nil`; invalid fixed offsets and POSIX strings raise
-`ArgumentError`. Instances are frozen, and ordinary `new` and `allocate` are
-disabled. `iana_name` returns `nil` for zones without an IANA name. The objects
-implement Ruby's timezone protocol, including abbreviation and DST callbacks.
+Ruby loads our native extension and registers `MagnusTimezone` when you require
+the gem. You do not write an extension initializer or call `register` yourself.
+Subsequent `require` calls reuse the loaded extension.
 
-Local construction rejects DST gaps and repeated local times with
-`ArgumentError`. Construct from an instant to select either occurrence of an
-overlap:
+We return `nil` for unknown IANA names and raise `ArgumentError` for invalid
+fixed offsets or POSIX strings. We freeze timezone objects and disable ordinary
+`new` and `allocate`. `iana_name` returns `nil` for zones without an IANA name.
+We implement Ruby's timezone protocol, including abbreviation and DST callbacks.
+
+We reject local times in DST gaps and repeated local times with `ArgumentError`.
+Construct from an instant to select either occurrence of an overlap:
 
 ```ruby
 Time.at(Time.utc(2024, 11, 3, 5, 30).to_i, in: "America/New_York") # EDT
 Time.at(Time.utc(2024, 11, 3, 6, 30).to_i, in: "America/New_York") # EST
 ```
 
+## Rust conversions
+
+The workspace also exposes the Rust crate `magnus_jiff_timezone`. Its `Zoned`
+wrapper lets us implement Magnus's conversion traits without violating Rust's
+orphan rules. We add no heap allocation for the wrapper itself. Use
+`Zoned::from(jiff_value)`, `as_inner()`, and `into_inner()` to work with raw
+`jiff::Zoned` values. Ruby callers still pass ordinary `Time` objects.
+
 We convert Ruby `Time` values to Jiff when they use UTC, a numeric UTC offset,
-or a timezone created by this crate. We preserve the instant and nanoseconds.
-For timezones created by this crate, we also preserve Jiff's rules. We raise
-`TypeError` for other providers' timezone objects and string abbreviations
-because their names do not identify the complete rules. IANA names passed
-through our resolver, such as `"America/New_York"`, remain supported.
+or one of our timezone objects. We preserve the instant and nanoseconds. For
+our timezone objects, we also preserve Jiff's rules. We raise `TypeError` for
+other providers' timezone objects and string abbreviations because their names
+do not identify the complete rules. We support IANA names such as
+`"America/New_York"` through our resolver.
 
 When we convert from Rust to Ruby, we use Ruby's built-in representations for
 UTC and fixed offsets. We attach our timezone objects for named, POSIX, and
@@ -84,21 +72,46 @@ fallback because Magnus's `IntoValue` trait cannot return an error. When an
 incoming timestamp exceeds Jiff's range, we raise `RangeError`. Ruby's native
 `timespec` range also limits which incoming dates we can convert.
 
-## Registration ownership and Marshal
+The gem owns its native timezone implementation. A separate native extension
+that embeds another copy of this Rust crate cannot reuse the gem's TypedData
+objects. We reject conflicting registration rather than replace the loaded
+class or resolver. Use the Ruby gem interface when sharing it between gems.
 
-We raise `LoadError` during registration if another provider already owns
+## Registration and Marshal
+
+We raise `LoadError` on loading if another library already owns
 `Time.find_timezone` or the `MagnusTimezone` constant. We never replace its
-constants or methods. You can register repeatedly through the same compiled
-provider while its class and resolver remain intact. We reject a second
-independently compiled extension using this crate, even when its version
-matches. Coordinate on one provider per Ruby process.
+constants or methods. We also validate repeated registration against the class
+and resolver we originally installed.
 
-Named zones round-trip through `Marshal` when the provider is registered before
-loading. Native fixed-offset times need no resolver. POSIX and unknown zones
-have no restorable IANA name, so `Marshal.dump` of a time carrying those objects
-raises `TypeError`. A time explicitly created with a fixed timezone *object*
-also has no IANA name; converting it through `Zoned` produces the native
-fixed-offset representation that can be marshaled.
+We restore named zones through `Marshal` after you require the gem in the
+loading process. Native fixed-offset times need no resolver. POSIX and unknown
+zones have no restorable IANA name, so dumping a time with those objects raises
+`TypeError`. A time explicitly created with a fixed timezone *object* also has
+no IANA name; converting it through `Zoned` gives Ruby's native fixed-offset
+representation, which supports Marshal.
 
-See [the design](docs/design.md) and [Ruby protocol research](docs/ruby-timezone-protocol.md)
-for the decisions and official documentation references.
+## Build and test from source
+
+We require Ruby 3.2 or later, Rust 1.85 or later, a C compiler, and libclang to
+build the native extension. Install the development dependencies, then run:
+
+```sh
+bundle install
+bundle exec rake test
+```
+
+The test task builds a source gem, installs it outside the checkout into a
+temporary gem directory, and tests `require`, timezone behavior, Marshal across
+processes, and registration conflicts. To build only the source archive, run
+`bundle exec rake build`; we write it under `pkg/`.
+
+Magnus 0.10 is not published yet. The installed gem's native build therefore
+pins the already-pushed Timestamp implementation at `ff586cc2c53684e6fb214b4294df9225291c9b4c`
+in `https://github.com/erickguan/magnus`. Installing this development source gem
+needs network access to that repository and the Cargo registry. The native
+build has its own lockfile and does not depend on the parent workspace. We use
+the local Magnus source for the workspace Rust tests.
+
+See [the design](docs/design.md), [Ruby protocol research](docs/ruby-timezone-protocol.md),
+and [validation results](docs/validation.md) for details.

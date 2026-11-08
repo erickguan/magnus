@@ -6,12 +6,26 @@ example, the minimal crate build, formatting, and whitespace checks after
 moving registration into `src/lib.rs` and renaming the Ruby class to
 `MagnusTimezone`. All passed without warnings.
 
+## Standalone gem revision
+
+The crate now also packages a standalone Ruby gem. We added a Ruby loader,
+gemspec, native extension entry point, independent locked native manifest,
+source-gem build task, and a test that installs the gem outside the checkout.
+The native manifest pins the pushed Timestamp-only Magnus commit because
+Magnus 0.10 is not published. The native initializer calls our existing
+registration function; users only require the gem.
+
+Validation of this revision is in progress. Its results will be recorded here
+before pushing. The earlier results below apply to the shared Rust
+implementation; they do not establish source-gem installability.
+
 ## Implementation scope
 
 The crate lives on the separate `magnus-jiff-timezone` bookmark, based on the
 Timestamp-only `jiff` work. The core Magnus timezone implementation remains
 absent. Only the workspace membership, dependency lockfile, and root README
-change outside the new crate.
+change outside the new crate in the original implementation. The standalone
+revision also adds a dedicated packaged-gem CI job and updates the root README.
 
 ## Coverage
 

@@ -1,0 +1,20 @@
+[package]
+name = "magnus-jiff-timezone-native"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+# Installed gems build independently of the parent Magnus workspace.
+[workspace]
+
+[lib]
+name = "magnus_jiff_timezone"
+crate-type = ["cdylib"]
+
+[dependencies]
+jiff = { version = "0.2.35", default-features = false, features = ["std", "tzdb-bundle-always"] }
+# Magnus 0.10 is unreleased. Pin the pushed Timestamp integration rather than
+# relying on the parent checkout or a moving branch when installing the gem.
+magnus = { git = "https://github.com/erickguan/magnus", rev = "ff586cc2c53684e6fb214b4294df9225291c9b4c", default-features = false, features = ["jiff", "rb-sys"] }
+rb-sys = { version = "0.9.124", default-features = false, features = ["stable-api-compiled-fallback"] }

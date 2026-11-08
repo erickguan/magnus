@@ -1,0 +1,26 @@
+# frozen_string_literal: true
+
+require "rake"
+require "rake/clean"
+require "rubygems/package"
+
+ROOT = File.expand_path(__dir__)
+SPEC = Gem::Specification.load(File.join(ROOT, "magnus-jiff-timezone.gemspec"))
+PACKAGE = File.join(ROOT, "pkg", "#{SPEC.full_name}.gem")
+
+CLOBBER.include(File.join(ROOT, "pkg"))
+
+desc "Build the standalone source gem"
+task :build do
+  Dir.chdir(ROOT) do
+    mkdir_p File.dirname(PACKAGE)
+    Gem::Package.build(SPEC, false, false, PACKAGE)
+  end
+end
+
+desc "Install the packaged gem in isolation and test it in Ruby"
+task test: :build do
+  ruby File.join(ROOT, "test", "installed_gem_test.rb"), PACKAGE
+end
+
+task default: :test

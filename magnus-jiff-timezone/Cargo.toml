@@ -3,7 +3,7 @@ name = "magnus-jiff-timezone"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "Explicit Jiff timezone integration for Ruby extensions using Magnus."
+description = "Standalone Ruby gem and Rust conversions for Jiff timezone rules."
 repository = "https://github.com/matsadler/magnus"
 license = "MIT"
 

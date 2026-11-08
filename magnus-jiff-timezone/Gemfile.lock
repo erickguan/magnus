@@ -1,0 +1,26 @@
+PATH
+  remote: .
+  specs:
+    magnus-jiff-timezone (0.1.0)
+      rb_sys (~> 0.9.130)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    minitest (5.25.4)
+    rake (13.2.1)
+    rake-compiler-dock (1.12.0)
+    rb_sys (0.9.130)
+      rake-compiler-dock (= 1.12.0)
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  magnus-jiff-timezone!
+  minitest (~> 5.0)
+  rake (>= 13.0)
+
+BUNDLED WITH
+   2.6.9

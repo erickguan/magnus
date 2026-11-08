@@ -4,8 +4,8 @@ Status: approved and implemented in this follow-up crate. Validation results are
 
 ## Agreed scope
 
-- Add `magnus-jiff-timezone` as a separate Rust library in the Magnus workspace, on a follow-up branch and PR based on the Timestamp-only work.
-- Extension authors explicitly register its Ruby functionality during their own extension initialization. Magnus itself gains no initialization hook.
+- Deliver a standalone Ruby gem and Rust workspace crate named `magnus-jiff-timezone`, on a follow-up branch and PR based on the Timestamp-only work.
+- `require "magnus-jiff-timezone"` loads the gem's native extension, which calls `register` in its own initializer. Ruby users do not write an initializer. Magnus itself gains no initialization hook. This supersedes the original library-only embedding proposal.
 - Ruby requires an object implementing its timezone protocol, not a particular public class name. This crate will provide a public `MagnusTimezone` class and all Jiff-backed protocol behavior. Extension authors need not define a timezone class themselves. See `ruby-timezone-protocol.md`.
 - Look up IANA timezone names from strings through Jiff's bundled database. Ruby has a timezone-object protocol but no built-in timezone class; this crate supplies objects implementing that protocol.
 - Include named-zone lookup, UTC, fixed offsets, POSIX rules, and unknown zones, using the implementation and tests in `backup-jiff` as reference.
@@ -44,7 +44,9 @@ No separate public helper for arbitrary third-party Ruby timezone objects is req
 
 ## Consolidated interface
 
-The entry point is `magnus_jiff_timezone::register(&Ruby) -> Result<(), magnus::Error>`, called by the extension author during their own `#[magnus::init]`. Registration lives in `src/lib.rs`; it defines the public top-level `MagnusTimezone` class and installs `Time.find_timezone`. Rust symbols remain `magnus_jiff_timezone::register` and `magnus_jiff_timezone::Zoned`.
+The Rust entry point remains `magnus_jiff_timezone::register(&Ruby) -> Result<(), magnus::Error>`. The standalone native initializer calls it automatically when Ruby requires the gem. Registration lives in `src/lib.rs`; it defines the public top-level `MagnusTimezone` class and installs `Time.find_timezone`. Rust symbols remain `magnus_jiff_timezone::register` and `magnus_jiff_timezone::Zoned`.
+
+The source gem includes a Ruby loader, gemspec, native extension manifest and initializer, the shared implementation, license, and a native dependency lockfile. The native manifest builds independently of the parent workspace. Because Magnus 0.10 is not yet released, it pins the pushed Timestamp commit `ff586cc2c53684e6fb214b4294df9225291c9b4c` in `erickguan/magnus`. Local workspace tests continue using the local Magnus source. The native adapter compiles the same implementation rather than maintaining a second timezone implementation.
 
 The Ruby class exposes the backup's constructors: `find_timezone(name)`, `utc`, `unknown`, `fixed(seconds)`, and `posix(rule)`. Lookup failure returns `nil`. Its protocol methods include `local_to_utc`, `utc_to_local`, `abbr`, `dst?`, `name`, `iana_name`, and `to_s`. Disable ordinary Ruby allocation and freeze valid instances.
 

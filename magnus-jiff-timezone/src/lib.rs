@@ -1,30 +1,23 @@
-//! Jiff timezone rules for Ruby `Time`, registered by an extension explicitly.
+//! Standalone Ruby timezone support backed by Jiff.
 //!
-//! Call [`register`] from your extension's initializer. It defines
-//! `MagnusTimezone` and `Time.find_timezone`. The [`Zoned`]
-//! wrapper enables automatic Magnus argument and return conversions while
-//! keeping the actual value available as [`jiff::Zoned`].
+//! Ruby applications load the gem with `require "magnus-jiff-timezone"`. Its
+//! native initializer calls [`register`] to define `MagnusTimezone` and
+//! `Time.find_timezone`. We always bundle IANA timezone data.
+//!
+//! Rust callers can use the [`Zoned`] wrapper to enable Magnus argument and
+//! return conversions while working with the underlying [`jiff::Zoned`].
 //!
 //! ```no_run
-//! use magnus::{Error, Ruby};
 //! use magnus_jiff_timezone::Zoned;
 //!
 //! fn identity(time: Zoned) -> Zoned {
 //!     time
 //! }
-//!
-//! #[magnus::init]
-//! fn init(ruby: &Ruby) -> Result<(), Error> {
-//!     magnus_jiff_timezone::register(ruby)?;
-//!     ruby.define_global_function("jiff_identity", magnus::function!(identity, 1))?;
-//!     Ok(())
-//! }
 //! ```
 //!
-//! Timezone data is always bundled. Registration rejects an existing foreign
-//! resolver or class and a second independently compiled provider. Repeated
-//! registration by the same provider is safe. Requiring a standalone Ruby gem
-//! is not part of this crate; the consuming extension owns initialization.
+//! We report registration conflicts instead of replacing another library's
+//! timezone class or resolver. Ruby's `require` loads the extension once;
+//! repeated calls to registration also succeed while our class remains intact.
 
 mod timezone;
 
@@ -49,16 +42,15 @@ struct Registration {
     resolver: Opaque<Value>,
 }
 
-// Each compiled provider owns its cache. A second provider cannot claim an
-// existing class merely because its crate version or descriptor name matches.
+// Keep our class and resolver available for repeated initialization checks.
 static REGISTRATION: OnceLock<Registration> = OnceLock::new();
 
 /// Registers `MagnusTimezone` and `Time.find_timezone` explicitly.
 ///
-/// Call this from your extension's initializer. We define the public class,
-/// enable IANA name lookup in Ruby Time, and restore named zones through Marshal.
-/// Repeated calls by the same provider succeed while its class and resolver
-/// remain installed.
+/// The gem's native initializer calls this function when Ruby requires it.
+/// We define the public class, enable IANA name lookup in Ruby Time, and restore
+/// named zones through Marshal. Repeated calls succeed while our class and
+/// resolver remain installed.
 ///
 /// # Errors
 ///
