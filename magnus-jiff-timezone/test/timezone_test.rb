@@ -37,6 +37,17 @@ class TimezoneTest < Minitest::Test
     assert_equal "EDT", summer.strftime("%Z")
   end
 
+  def test_local_construction_preserves_fractional_seconds
+    fraction = Rational(123_456_789, 1_000_000_000)
+    ["America/New_York", MagnusTimezone.fixed(19_800),
+     MagnusTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
+      time = Time.new(2024, 7, 1, 12, 0, fraction, in: zone)
+      assert_equal 123_456_789, time.nsec
+      assert_equal fraction, time.subsec
+      assert_equal time.to_r, time.getutc.to_r
+    end
+  end
+
   def test_arithmetic_uses_transition_rules
     before = Time.at(Time.utc(2024, 3, 10, 6, 30).to_i, in: "America/New_York")
     after = before + 3_600

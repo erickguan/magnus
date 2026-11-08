@@ -25,8 +25,9 @@ Dir.mktmpdir("magnus-timezone-install-") do |directory|
     "RUSTFLAGS" => nil,
     "CARGO_ENCODED_RUSTFLAGS" => nil
   }
-  command = [ruby, "-S", "gem", "install", "--local", "--no-document",
-             "--install-dir", gem_home, source_gem]
+  # GEM_HOME selects the destination. An explicit --install-dir makes RubyGems
+  # ignore the already-installed dependencies that GEM_PATH exposes.
+  command = [ruby, "-S", "gem", "install", "--local", "--no-document", source_gem]
   puts "Installing #{File.basename(package)} outside the checkout"
   unless system(env, *command, chdir: directory)
     abort "Standalone gem installation failed"
