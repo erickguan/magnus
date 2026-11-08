@@ -1,8 +1,8 @@
 # magnus-jiff-timezone
 
 Use Jiff's timezone rules with Ruby `Time` from a Magnus extension. The crate
-always bundles IANA timezone data and exposes the public Ruby class
-`MagnusJiffTimezone::TimeZone`.
+bundles IANA timezone data and exposes the public Ruby class
+`MagnusTimezone`.
 
 ## Register from your extension
 
@@ -37,7 +37,7 @@ wrapper and `jiff::Zoned`. Ruby callers continue to use ordinary `Time` objects.
 ## Ruby constructors and conversions
 
 ```ruby
-zone = MagnusJiffTimezone::TimeZone.find_timezone("America/New_York")
+zone = MagnusTimezone.find_timezone("America/New_York")
 time = Time.new(2024, 7, 1, 12, 0, 0, in: zone)
 time.utc_offset # => -14400
 time.dst?       # => true
@@ -47,10 +47,10 @@ jiff_identity(time) == time # => true
 # Time.find_timezone also allows names in Ruby's Time constructors.
 Time.at(0, in: "Asia/Tokyo")
 
-MagnusJiffTimezone::TimeZone.utc
-MagnusJiffTimezone::TimeZone.fixed(19_800) # Seconds east of UTC.
-MagnusJiffTimezone::TimeZone.posix("EST5EDT,M3.2.0,M11.1.0")
-MagnusJiffTimezone::TimeZone.unknown
+MagnusTimezone.utc
+MagnusTimezone.fixed(19_800) # Seconds east of UTC.
+MagnusTimezone.posix("EST5EDT,M3.2.0,M11.1.0")
+MagnusTimezone.unknown
 ```
 
 Unknown IANA names return `nil`; invalid fixed offsets and POSIX strings raise
@@ -67,25 +67,31 @@ Time.at(Time.utc(2024, 11, 3, 5, 30).to_i, in: "America/New_York") # EDT
 Time.at(Time.utc(2024, 11, 3, 6, 30).to_i, in: "America/New_York") # EST
 ```
 
-Conversions preserve instants, nanoseconds, and Jiff rules. Native UTC and
-numeric-offset Ruby times are supported. Foreign timezone objects and string
-abbreviations are rejected with `TypeError`; their names do not establish a
-lossless rule mapping. Out-of-range timestamps raise `RangeError`. Ruby's native
-`timespec` range also limits Ruby-to-Jiff conversion.
+We convert Ruby `Time` values to Jiff when they use UTC, a numeric UTC offset,
+or a timezone created by this crate. We preserve the instant and nanoseconds.
+For timezones created by this crate, we also preserve Jiff's rules. We raise
+`TypeError` for other providers' timezone objects and string abbreviations
+because their names do not identify the complete rules. IANA names passed
+through our resolver, such as `"America/New_York"`, remain supported.
 
-Ruby stores UTC and explicit fixed offsets natively. Other zones carry this
-provider's timezone object. If Ruby rejects construction of an outgoing zoned
-value, Magnus's infallible `IntoValue` conversion warns and returns the same
-instant in UTC.
+When we convert from Rust to Ruby, we use Ruby's built-in representations for
+UTC and fixed offsets. We attach our timezone objects for named, POSIX, and
+unknown zones.
+
+If Ruby rejects construction with the outgoing timezone, we print a warning
+and return the same instant in UTC, losing the original timezone. We use this
+fallback because Magnus's `IntoValue` trait cannot return an error. When an
+incoming timestamp exceeds Jiff's range, we raise `RangeError`. Ruby's native
+`timespec` range also limits which incoming dates we can convert.
 
 ## Registration ownership and Marshal
 
-Registration raises `LoadError` if `Time.find_timezone` or the
-`MagnusJiffTimezone` namespace is already owned by another provider. It never
-replaces foreign constants or methods. Repeated registration through the same
-compiled provider is idempotent, provided its class and resolver are intact.
-A second independently compiled extension using this crate is rejected even
-when its version matches. Coordinate on one provider per Ruby process.
+We raise `LoadError` during registration if another provider already owns
+`Time.find_timezone` or the `MagnusTimezone` constant. We never replace its
+constants or methods. You can register repeatedly through the same compiled
+provider while its class and resolver remain intact. We reject a second
+independently compiled extension using this crate, even when its version
+matches. Coordinate on one provider per Ruby process.
 
 Named zones round-trip through `Marshal` when the provider is registered before
 loading. Native fixed-offset times need no resolver. POSIX and unknown zones

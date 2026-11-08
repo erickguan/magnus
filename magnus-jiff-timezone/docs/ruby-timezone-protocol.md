@@ -33,7 +33,7 @@ Neither step requires a public class named `Timezone`, a versioned class constan
 
 ## Implications for this crate
 
-The crate can supply all protocol behavior using Jiff. Extension authors need not write their own timezone callbacks. We can either expose a public class such as `MagnusJiffTimezone::TimeZone`, or keep the class internal and expose constructors through a module. Both arrangements satisfy Ruby's documented protocol.
+The crate can supply all protocol behavior using Jiff. Extension authors need not write their own timezone callbacks. We can either expose a public class such as `MagnusTimezone`, or keep the class internal and expose constructors through a module. Both arrangements satisfy Ruby's documented protocol.
 
 Asking extension authors to supply a class is also possible, but it is an extra registration-interface choice. Ruby does not require it. Leaving the entire object implementation to users would shift the very conversion and DST logic this crate is intended to provide back into each extension.
 

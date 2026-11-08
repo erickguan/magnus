@@ -1,7 +1,10 @@
 # Validation
 
-The initial implementation passes focused validation on Linux x86_64 with Ruby
-3.4.12 and Rust 1.99.1.
+The implementation passes focused validation on Linux x86_64 with Ruby 3.4.12
+and Rust 1.99.1. We reran all five integration executables, the documentation
+example, the minimal crate build, formatting, and whitespace checks after
+moving registration into `src/lib.rs` and renaming the Ruby class to
+`MagnusTimezone`. All passed without warnings.
 
 ## Implementation scope
 
@@ -13,9 +16,9 @@ change outside the new crate.
 ## Coverage
 
 The integration tests port the `backup-jiff` timezone behavior to the new Rust
-wrapper and public `MagnusJiffTimezone::TimeZone` class. Additional tests cover
+wrapper and public `MagnusTimezone` class. Additional tests cover
 automatic wrapper conversion through a bound function, negative instants and
-Jiff timestamp boundaries, foreign resolver and namespace rejection, repeated
+Jiff timestamp boundaries, foreign resolver and class rejection, repeated
 registration, and cleanup when a frozen `Time` prevents resolver installation.
 
 The independent-provider test compiles the same sources in an additional Rust
@@ -34,11 +37,13 @@ These settings apply only to local validation commands.
 ## Results
 
 - `cargo test --package magnus-jiff-timezone --tests`: all five integration
-  executables pass, covering timezone behavior, foreign namespace and resolver
+  executables pass, covering timezone behavior, foreign class and resolver
   conflicts, independent provider rejection, and failed-registration cleanup.
 - `cargo test --package magnus-jiff-timezone --doc`: the registration and wrapper
   example compiles successfully.
-- `cargo test --package magnus --test time`: the core time integration passes.
+- `cargo test --package magnus --test time`: the core time integration passed
+  before the registration move and Ruby class rename. Those changes do not
+  modify core Magnus code.
 - `cargo check --package magnus-jiff-timezone --lib --no-default-features`:
   passes. Bundled data remains enabled because it is mandatory for this crate.
 - `cargo fmt --all --check` and `git diff --check`: pass.

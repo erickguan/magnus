@@ -10,7 +10,7 @@ fn foreign_resolver_is_preserved() {
         rb_assert!(
             ruby,
             "Time.find_timezone('UTC') == [:foreign, 'UTC'] && \
-            !Object.const_defined?(:MagnusJiffTimezone, false)"
+            !Object.const_defined?(:MagnusTimezone, false)"
         );
         ruby.eval::<Value>("class << Time; remove_method :find_timezone; end")?;
         register(ruby)?;

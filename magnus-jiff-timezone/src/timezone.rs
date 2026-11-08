@@ -8,7 +8,7 @@ use magnus::{
     typed_data::{DataTypeBuilder, Obj},
 };
 
-use crate::{registration, time_from_timestamp};
+use super::{class, time_from_timestamp};
 
 // CRuby reuses the conversion argument for its following dst? callback. Keep
 // the resolved instant on that argument, never on the shared timezone object.
@@ -17,7 +17,7 @@ const RESOLVED_TIMESTAMP: &str = "@_magnus_jiff_resolved_ts";
 pub(crate) struct TimeZoneData(TimeZone);
 
 pub(crate) fn wrap(ruby: &Ruby, zone: TimeZone) -> Result<Obj<TimeZoneData>, Error> {
-    registration::class(ruby)?;
+    class(ruby)?;
     Ok(TimeZoneData::new(ruby, zone))
 }
 
@@ -159,7 +159,7 @@ unsafe impl TypedData for TimeZoneData {
     fn class(ruby: &Ruby) -> RClass {
         // The type is private: its constructors and wrap() only run after
         // explicit registration has installed the class.
-        registration::class(ruby).expect("register magnus-jiff-timezone before wrapping a timezone")
+        class(ruby).expect("register magnus-jiff-timezone before wrapping a timezone")
     }
 
     fn data_type() -> &'static DataType {

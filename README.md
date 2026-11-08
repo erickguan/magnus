@@ -624,7 +624,7 @@ magnus = { git = "https://github.com/matsadler/magnus.git" }
 
 The workspace's [`magnus-jiff-timezone`](magnus-jiff-timezone/README.md) crate
 adds explicit timezone registration and automatic zoned conversions through a
-Rust wrapper. It provides `MagnusJiffTimezone::TimeZone` and bundled timezone
+Rust wrapper. It provides `MagnusTimezone` and bundled timezone
 data while Magnus's own `jiff` feature remains limited to timestamp conversion.
 
 ### rb-sys
