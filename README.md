@@ -620,6 +620,13 @@ magnus = { git = "https://github.com/matsadler/magnus.git" }
 
 ## Crates that work with Magnus
 
+### magnus-jiff-timezone
+
+The workspace's [`magnus-jiff-timezone`](magnus-jiff-timezone/README.md) crate
+adds explicit timezone registration and automatic zoned conversions through a
+Rust wrapper. It provides `MagnusJiffTimezone::TimeZone` and bundled timezone
+data while Magnus's own `jiff` feature remains limited to timestamp conversion.
+
 ### rb-sys
 
 Magnus uses [rb-sys] to provide the low-level bindings to Ruby. The

@@ -12,7 +12,7 @@ license = "MIT"
 exclude = [".github", ".gitignore"]
 
 [workspace]
-members = ["magnus-macros"]
+members = ["magnus-macros", "magnus-jiff-timezone"]
 exclude = [
     "examples/rust_blank/ext/rust_blank",
     "examples/custom_exception_ruby/ext/ahriman",
