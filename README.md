@@ -375,7 +375,7 @@ See `magnus::TryConvert` for more details.
 | `[T; N]`                                                             | `[T]`, `#to_ary`                        |
 | `magnus::RArray`                                                     | `Array`, `#to_ary`                      |
 | `magnus::RHash`                                                      | `Hash`, `#to_hash`                      |
-| `std::time::SystemTime`, `magnus::Time`, `chrono::DateTime<T>`§, `jiff::Timestamp`‖ | `Time`                                  |
+| `std::time::SystemTime`, `magnus::Time`, `chrono::DateTime<T>`§, `jiff::Timestamp`‖, `jiff::Zoned`¶ | `Time`                                  |
 | `magnus::Value`                                                      | any object                              |
 | `Vec<T>`\*                                                           | `[T]`, `#to_ary`                        |
 | `HashMap<K, V>`\*                                                    | `{K => V}`, `#to_hash`                  |
@@ -390,6 +390,8 @@ See `magnus::TryConvert` for more details.
 § when the `chrono` feature is enabled; `T` can be `Utc` or `FixedOffset`.
 
 ‖ when the `jiff` feature is enabled.
+
+¶ when the `jiff-zoned` feature is enabled.
 
 #### Jiff conversion notes
 
@@ -422,7 +424,7 @@ and `magnus::ArgList` for some additional details.
 | `Result<T, magnus::Error>` (return only)           | `T` or raises error                     |
 | `(T, U)`, `(T, U, V)`, etc, `[T; N]`, `Vec<T>`     | `Array`                                 |
 | `HashMap<K, V>`                                    | `Hash`                                  |
-| `std::time::SystemTime`, `magnus::Time`, `chrono::DateTime<T>`§, `jiff::Timestamp`‖ | `Time`                                  |
+| `std::time::SystemTime`, `magnus::Time`, `chrono::DateTime<T>`§, `jiff::Timestamp`‖, `jiff::Zoned`¶ | `Time`                                  |
 | `T`, `typed_data::Obj<T>` where `T: TypedData`\*  | instance of `<T as TypedData>::class()` |
 
 \* see the `wrap` macro.
@@ -431,6 +433,8 @@ and `magnus::ArgList` for some additional details.
 
 ‖ when the `jiff` feature is enabled.
 
+¶ when the `jiff-zoned` feature is enabled.
+
 #### Jiff conversion notes
 
 ##### `jiff::Timestamp`
@@ -438,10 +442,26 @@ and `magnus::ArgList` for some additional details.
 Enable the `jiff` feature to convert `jiff::Timestamp` to Ruby `Time`.
 Magnus creates a UTC Ruby `Time` with the same instant and nanoseconds.
 
-To pass the instant from a `jiff::Zoned` value, convert it explicitly with
-`zoned.timestamp()`. The Ruby result is UTC; its original timezone rules are
-not retained. Magnus provides no automatic conversion for `jiff::Zoned`, civil
-types, or duration types.
+##### `jiff::Zoned`
+
+Enable `jiff-zoned` to accept and return `jiff::Zoned` directly. We preserve the
+instant, nanoseconds, and timezone rules through `magnus::time::JiffTimeZone`,
+the native backing type for Ruby's timezone protocol. We create its anonymous
+Ruby class lazily; we install no public class, resolver, or initialization hook.
+
+Companion extensions can subclass `JiffTimeZone::class(ruby)` and use
+`ruby.obj_wrap_as(JiffTimeZone::new(zone), subclass)` to expose public timezone
+constructors while reusing Magnus's conversions and callbacks.
+
+We accept native UTC, numeric fixed offsets, and our backing objects on input.
+We reject foreign timezone objects and string abbreviations with `TypeError`.
+Local civil times in gaps or folds raise `ArgumentError`; converting an explicit
+instant preserves either fold occurrence. If Ruby rejects an outgoing zone,
+we warn and return the same instant in UTC. Named-zone Marshal restoration
+requires an application-provided resolver. Core Magnus does not bundle an IANA
+database; callers choose their Jiff database source.
+
+We do not automatically convert Jiff civil or duration types.
 
 ### Conversions via Serde
 
@@ -581,7 +601,8 @@ magnus = { git = "https://github.com/matsadler/magnus.git" }
 | `fiber`      | ✔︎       | `fiber`, `Fiber`                        |
 | `gvl`        |         | `gvl`, `Ruby::nogvl`                    |
 | `io`         | ✔︎       | `io`                                    |
-| `jiff`       |         | conversions for the jiff crate          |
+| `jiff`       |         | Jiff timestamp conversions              |
+| `jiff-zoned` |         | Jiff zoned conversions and backing type |
 | `mutex`      | ✔︎       | `Mutex`                                 |
 | `numeric`    | ✔︎       | `numeric`, `Numeric`                    |
 | `process`    | ✔︎       | `process`                               |

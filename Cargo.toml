@@ -27,6 +27,7 @@ bytes = ["dep:bytes"]
 chrono = ["dep:chrono", "time"]
 debug = ["typed_data"]
 jiff = ["dep:jiff", "time"]
+jiff-zoned = ["jiff", "jiff/alloc"]
 embed = ["rb-sys/link-ruby"]
 fiber = ["typed_data"]
 gvl = []
@@ -59,11 +60,12 @@ rb-sys = { version = "0.9.124", default-features = false, features = [
 seq-macro = "0.3"
 
 [dev-dependencies]
+jiff = { version = "0.2.35", default-features = false, features = ["std", "tzdb-bundle-always"] }
 magnus = { path = ".", features = [
     "bytes",
     "chrono",
     "embed",
-    "jiff",
+    "jiff-zoned",
     "io",
     "gvl",
     "rb-sys",

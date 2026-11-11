@@ -7,6 +7,9 @@
 - `Ruby::nogvl`.
 - Automatic, nanosecond-precision conversion between Ruby `Time` and
   `jiff::Timestamp` with the `jiff` feature.
+- Direct `jiff::Zoned` conversion and a reusable `time::JiffTimeZone` backing
+  type with the `jiff-zoned` feature. Public timezone registration remains
+  the responsibility of companion extensions.
 
 ### Changed
 - New `block`, `debug`, `fiber`, `mutex`, `numeric`, `process`, `range`,
