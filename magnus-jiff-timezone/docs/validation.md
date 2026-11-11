@@ -48,8 +48,11 @@ new timezone module's earlier binding-macro import warnings.
 
 The native manifest pins `665db9f9390cadc9ffdb52d86b6bcc3dffae1e9e` from
 `https://github.com/erickguan/magnus` with `jiff-zoned` enabled. We regenerated
-its independent lockfile. The source-gem installation test is running against
-that exact core revision outside the workspace; results are pending.
+its independent lockfile. `bundle exec rake test` rebuilt and installed the
+source gem outside the workspace against that exact core revision. All nine
+Ruby tests and 55 assertions passed, along with fresh-process registration
+conflict checks. The installed-class assertions verify that `MagnusTimezone`
+has an anonymous superclass and inherits its conversion callback from it.
 
 The install test checks `require`, automatic registration, public class
 inheritance, bundled lookup, all constructors, DST arithmetic, gaps/folds,
