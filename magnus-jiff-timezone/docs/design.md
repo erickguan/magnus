@@ -1,6 +1,20 @@
 # Magnus–Jiff timezone design
 
-Status: approved and implemented in this follow-up crate. Validation results are recorded in `validation.md`.
+Status: architecture revision in progress. The pushed implementation below still places the Rust `Zoned` wrapper in the companion crate; we have not yet implemented the corrected ownership split.
+
+## Revised ownership decision
+
+Magnus should own the core zoned conversion support. The companion crate and standalone gem should build the public Ruby timezone interface and registration tools on that support. Magnus must not install the public class, resolver, or an extra initialization hook automatically.
+
+The original PR's wrapper is `JiffTimeZone`, which contains only a `jiff::tz::TimeZone` and backs the Ruby object attached to `Time#zone`. It is not a public Rust newtype around `jiff::Zoned`. In the original `3ca4c91` implementation, callers use raw `jiff::Zoned`; Magnus implements `IntoValue` and `TryConvert` for it directly and uses `JiffTimeZone` internally.
+
+The companion crate's current implementation has two separate wrappers: `TimeZoneData(jiff::tz::TimeZone)` for the Ruby protocol object, and public `Zoned(jiff::Zoned)` for conversion-trait ownership outside Magnus. The public `Zoned` newtype was an extraction workaround introduced during this session, not the wrapper from PR #184.
+
+The revised direction is to retain the minimal timezone backing wrapper and direct `jiff::Zoned` conversion traits in Magnus, while exposing a small explicit interface that lets the companion crate add its public class, constructors, resolver, and gem initialization. The registration interface for extending that backing implementation still needs design; Magnus must not install the public functionality automatically.
+
+The implementation must keep native-data ownership explicit; moving Rust code between crates alone does not establish compatibility between independently compiled native extensions. We will test the chosen interface rather than assume matching type names imply shared native descriptors.
+
+The remaining sections describe the previously approved and implemented design and will be rewritten when the revised interface is settled.
 
 ## Agreed scope
 
