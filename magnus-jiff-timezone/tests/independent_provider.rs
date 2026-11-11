@@ -1,13 +1,12 @@
-// Compile the provider sources a second time in this integration-test crate.
-// Its static registration cache and TypedData descriptor are independent of
-// the linked library's, reproducing a second compiled provider in one VM.
+// A second companion instance has independent registration state, but both
+// instances use Magnus's core backing type and direct Jiff conversion traits.
 #[path = "../src/lib.rs"]
 mod second_provider;
 
 use magnus::{Error, Ruby, Time, TryConvert, Value, prelude::*, rb_assert};
 
 #[test]
-fn independently_compiled_provider_is_rejected() {
+fn second_registration_is_rejected_and_core_conversion_is_shared() {
     Ruby::init(|ruby| -> Result<(), Error> {
         magnus_jiff_timezone::register(ruby)?;
         let original: Value = ruby.eval("Time.find_timezone('America/New_York')")?;
@@ -20,14 +19,9 @@ fn independently_compiled_provider_is_rejected() {
              Time.find_timezone('Asia/Tokyo').name == 'Asia/Tokyo'",
             zone = original
         );
-        // A real second provider cannot use the first provider's objects.
         let time: Time = magnus::eval!(ruby, "Time.at(0, in: zone)", zone = original)?;
-        assert!(second_provider::Zoned::try_convert(time.as_value()).is_err());
-        let wrapped = second_provider::Zoned::from(jiff::Zoned::new(
-            jiff::Timestamp::UNIX_EPOCH,
-            jiff::tz::TimeZone::UTC,
-        ));
-        assert_eq!(wrapped.as_inner(), &wrapped.clone().into_inner());
+        let zoned = jiff::Zoned::try_convert(time.as_value())?;
+        assert_eq!(zoned.time_zone().iana_name(), Some("America/New_York"));
         magnus_jiff_timezone::register(ruby)?;
         Ok(())
     })

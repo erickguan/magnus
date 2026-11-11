@@ -49,11 +49,21 @@ Time.at(Time.utc(2024, 11, 3, 6, 30).to_i, in: "America/New_York") # EST
 
 ## Rust conversions
 
-The workspace also exposes the Rust crate `magnus_jiff_timezone`. Its `Zoned`
-wrapper lets us implement Magnus's conversion traits without violating Rust's
-orphan rules. We add no heap allocation for the wrapper itself. Use
-`Zoned::from(jiff_value)`, `as_inner()`, and `into_inner()` to work with raw
-`jiff::Zoned` values. Ruby callers still pass ordinary `Time` objects.
+Magnus's `jiff-zoned` feature implements conversions directly for `jiff::Zoned`.
+We do not define another Rust `Zoned` type in this crate:
+
+```rust
+fn identity(time: jiff::Zoned) -> jiff::Zoned {
+    time
+}
+```
+
+Magnus stores the timezone rules in `magnus::time::JiffTimeZone`, the backing
+wrapper used by Ruby's timezone protocol. Our public `MagnusTimezone` class
+subclasses its anonymous Ruby class and adds constructors. We reuse Magnus's
+native data type and callbacks. Ruby callers still pass ordinary `Time` values.
+Outgoing core conversions may return times with the anonymous backing class;
+our resolver and constructors return the named `MagnusTimezone` subclass.
 
 We convert Ruby `Time` values to Jiff when they use UTC, a numeric UTC offset,
 or one of our timezone objects. We preserve the instant and nanoseconds. For
@@ -72,10 +82,10 @@ fallback because Magnus's `IntoValue` trait cannot return an error. When an
 incoming timestamp exceeds Jiff's range, we raise `RangeError`. Ruby's native
 `timespec` range also limits which incoming dates we can convert.
 
-The gem owns its native timezone implementation. A separate native extension
-that embeds another copy of this Rust crate cannot reuse the gem's TypedData
-objects. We reject conflicting registration rather than replace the loaded
-class or resolver. Use the Ruby gem interface when sharing it between gems.
+The gem owns public registration. We do not replace another library's class
+or resolver. Native data descriptors are shared when Rust code links the same
+Magnus implementation; matching crate versions do not guarantee compatibility
+between independently built shared libraries.
 
 ## Registration and Marshal
 
@@ -88,7 +98,7 @@ We restore named zones through `Marshal` after you require the gem in the
 loading process. Native fixed-offset times need no resolver. POSIX and unknown
 zones have no restorable IANA name, so dumping a time with those objects raises
 `TypeError`. A time explicitly created with a fixed timezone *object* also has
-no IANA name; converting it through `Zoned` gives Ruby's native fixed-offset
+no IANA name; converting it through `jiff::Zoned` gives Ruby's native fixed-offset
 representation, which supports Marshal.
 
 ## Build and test from source
@@ -107,7 +117,7 @@ processes, and registration conflicts. To build only the source archive, run
 `bundle exec rake build`; we write it under `pkg/`.
 
 Magnus 0.10 is not published yet. The installed gem's native build therefore
-pins the already-pushed Timestamp implementation at `ff586cc2c53684e6fb214b4294df9225291c9b4c`
+pins the rebuilt core zoned implementation at `665db9f9390cadc9ffdb52d86b6bcc3dffae1e9e`
 in `https://github.com/erickguan/magnus`. Installing this development source gem
 needs network access to that repository and the Cargo registry. The native
 build has its own lockfile and does not depend on the parent workspace. We use

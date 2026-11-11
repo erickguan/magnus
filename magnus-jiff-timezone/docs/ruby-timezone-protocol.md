@@ -37,7 +37,7 @@ The crate can supply all protocol behavior using Jiff. Extension authors need no
 
 Asking extension authors to supply a class is also possible, but it is an extra registration-interface choice. Ruby does not require it. Leaving the entire object implementation to users would shift the very conversion and DST logic this crate is intended to provide back into each extension.
 
-Explicit registration, bundled data, the Rust wrapper, foreign-resolver rejection, and rejection of a second independently compiled provider are project decisions, not Ruby protocol requirements.
+Explicit gem registration, bundled data, Magnus’s core backing wrapper, and foreign-resolver rejection are project decisions, not Ruby protocol requirements.
 
 ## Verification limits
 

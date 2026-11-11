@@ -8,6 +8,8 @@ require "magnus-jiff-timezone"
 class TimezoneTest < Minitest::Test
   def test_require_registers_once
     assert_kind_of Class, MagnusTimezone
+    assert_nil MagnusTimezone.superclass.name
+    assert_equal MagnusTimezone.superclass, MagnusTimezone.instance_method(:utc_to_local).owner
     assert_respond_to Time, :find_timezone
     refute require("magnus-jiff-timezone")
     assert_equal "Asia/Tokyo", Time.find_timezone("Asia/Tokyo").name

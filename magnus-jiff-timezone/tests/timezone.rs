@@ -1,12 +1,12 @@
 use jiff::{
-    Timestamp,
+    Timestamp, Zoned,
     tz::{Offset, TimeZone},
 };
 use magnus::{Error, IntoValue, Ruby, Time, TryConvert, Value, prelude::*, rb_assert};
-use magnus_jiff_timezone::{Zoned, register};
+use magnus_jiff_timezone::register;
 
 fn zoned(timestamp: Timestamp, zone: TimeZone) -> Zoned {
-    jiff::Zoned::new(timestamp, zone).into()
+    jiff::Zoned::new(timestamp, zone)
 }
 
 // Ruby may initialize only once per process. Exercise all protocol operations
@@ -33,7 +33,7 @@ fn timezone_integration() {
         resolver_finds_named_zones_for_ruby_time(ruby)?;
         unknown_zone_remains_distinct_from_utc(ruby)?;
         utc_zone_round_trips(ruby)?;
-        automatic_wrapper_binding(ruby)?;
+        direct_zoned_binding(ruby)?;
         range_boundaries_and_negative_instants(ruby)?;
         non_iana_marshal_is_explicitly_unsupported(ruby)?;
         Ok(())
@@ -164,10 +164,7 @@ fn fixed_zones_use_native_ruby_offsets(ruby: &Ruby) -> Result<(), Error> {
         zone,
         t = time,
     );
-    assert_eq!(
-        Zoned::try_convert(time)?.as_inner().offset().seconds(),
-        19_800
-    );
+    assert_eq!(Zoned::try_convert(time)?.offset().seconds(), 19_800);
     rb_assert!(ruby, "zone.iana_name.nil?", zone);
     let err = zone.funcall::<_, _, String>("name", ()).unwrap_err();
     assert!(err.is_kind_of(ruby.exception_type_error()), "{err}");
@@ -179,8 +176,8 @@ fn fixed_zones_use_native_ruby_offsets(ruby: &Ruby) -> Result<(), Error> {
     // 2022-05-31 16:08:00 UTC
     let fixed: Value = ruby.eval("Time.at(1654013280, 123456789, :nsec, in: '+05:30')")?;
     let expected = Zoned::try_convert(fixed)?;
-    assert_eq!(expected.as_inner().offset().seconds(), 19_800);
-    assert_eq!(expected.as_inner().time_zone().iana_name(), None);
+    assert_eq!(expected.offset().seconds(), 19_800);
+    assert_eq!(expected.time_zone().iana_name(), None);
     let time = expected.clone().into_value_with(ruby);
     assert_eq!(Zoned::try_convert(time)?, expected);
     rb_assert!(
@@ -223,10 +220,7 @@ fn local_construction_resolves_civil_time(ruby: &Ruby) -> Result<(), Error> {
         t = local,
     );
     assert_eq!(
-        Zoned::try_convert(local)?
-            .as_inner()
-            .time_zone()
-            .iana_name(),
+        Zoned::try_convert(local)?.time_zone().iana_name(),
         Some("America/New_York")
     );
     let named: Value = ruby.eval("Time.new(2024, 1, 11, 2, 30, 0, in: 'America/New_York')")?;
@@ -337,7 +331,7 @@ fn named_zone_round_trips_with_seasonal_offsets_and_metadata(ruby: &Ruby) -> Res
         ruby,
         "zone.frozen? && zone.name == 'America/New_York' && \
          zone.iana_name == 'America/New_York' && \
-         zone.to_s == 'America/New_York' && zone.class == MagnusTimezone",
+         zone.to_s == 'America/New_York' && zone.class.name.nil?",
         zone,
     );
     assert!(!zone.respond_to("to_str", false)?);
@@ -374,10 +368,10 @@ fn posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Resul
     )?;
     let converted = Zoned::try_convert(from_ruby)?;
     assert_eq!(
-        converted.as_inner().timestamp(),
+        converted.timestamp(),
         "2024-07-01T16:00:00Z".parse::<Timestamp>().unwrap()
     );
-    assert_eq!(converted.as_inner().time_zone(), &posix);
+    assert_eq!(converted.time_zone(), &posix);
 
     for (instant, offset, abbreviation, dst) in [
         ("2024-01-01T12:00:00Z", -18_000, "EST", false),
@@ -388,7 +382,7 @@ fn posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Resul
         assert_eq!(Zoned::try_convert(time)?, expected);
         rb_assert!(
             ruby,
-            "t.zone.instance_of?(MagnusTimezone) && t.utc_offset == offset && \
+            "t.zone.class.name.nil? && t.utc_offset == offset && \
              t.strftime('%Z') == abbreviation && t.dst? == dst",
             t = time,
             offset,
@@ -415,7 +409,7 @@ fn timezone_find_returns_named_zone_and_timestamp(ruby: &Ruby) -> Result<(), Err
         (1_704_941_204, magnus::kwargs!(ruby, "in" => exposed)),
     )?;
     assert_eq!(
-        Zoned::try_convert(time)?.as_inner().time_zone().iana_name(),
+        Zoned::try_convert(time)?.time_zone().iana_name(),
         Some("America/New_York")
     );
     assert_eq!(
@@ -447,10 +441,7 @@ fn resolver_parses_time_subclass(ruby: &Ruby) -> Result<(), Error> {
         t = parsed,
     );
     assert_eq!(
-        Zoned::try_convert(parsed)?
-            .as_inner()
-            .time_zone()
-            .iana_name(),
+        Zoned::try_convert(parsed)?.time_zone().iana_name(),
         Some("America/New_York")
     );
     Ok(())
@@ -491,10 +482,7 @@ fn resolver_finds_named_zones_for_ruby_time(ruby: &Ruby) -> Result<(), Error> {
                 zone,
             );
             assert_eq!(
-                Zoned::try_convert(from_instant)?
-                    .as_inner()
-                    .time_zone()
-                    .iana_name(),
+                Zoned::try_convert(from_instant)?.time_zone().iana_name(),
                 Some(name)
             );
             let from_local: Value = magnus::eval!(
@@ -529,11 +517,8 @@ fn resolver_finds_named_zones_for_ruby_time(ruby: &Ruby) -> Result<(), Error> {
     // 2024-01-11 02:46:44 UTC
     let time: Value = ruby.eval("Time.at(1704941204).getlocal('America/New_York')")?;
     let zoned = Zoned::try_convert(time)?;
-    assert_eq!(
-        zoned.as_inner().time_zone().iana_name(),
-        Some("America/New_York")
-    );
-    assert_eq!(zoned.as_inner().offset().seconds(), -18_000);
+    assert_eq!(zoned.time_zone().iana_name(), Some("America/New_York"));
+    assert_eq!(zoned.offset().seconds(), -18_000);
     rb_assert!(
         ruby,
         "Time.find_timezone('Not/A_Zone').nil? && \
@@ -576,14 +561,14 @@ fn utc_zone_round_trips(ruby: &Ruby) -> Result<(), Error> {
     // 2022-05-31 16:08:00 UTC
     let time: Value = ruby.eval("Time.at(1654013280, in: 'UTC')")?;
     let expected = Zoned::try_convert(time)?;
-    assert_eq!(expected.as_inner().time_zone(), &TimeZone::UTC);
+    assert_eq!(expected.time_zone(), &TimeZone::UTC);
     let time = expected.clone().into_value_with(ruby);
     assert_eq!(Zoned::try_convert(time)?, expected);
     rb_assert!(ruby, "t.utc? && t.zone == 'UTC'", t = time);
     Ok(())
 }
 
-fn automatic_wrapper_binding(ruby: &Ruby) -> Result<(), Error> {
+fn direct_zoned_binding(ruby: &Ruby) -> Result<(), Error> {
     fn identity(time: Zoned) -> Zoned {
         time
     }
@@ -594,9 +579,6 @@ fn automatic_wrapper_binding(ruby: &Ruby) -> Result<(), Error> {
         result = jiff_identity(t); result == t && result.nsec == t.nsec && \
         result.zone.iana_name == 'America/New_York'"
     );
-    let wrapped = zoned(Timestamp::UNIX_EPOCH, TimeZone::UTC);
-    assert_eq!(wrapped.as_ref(), wrapped.as_inner());
-    assert_eq!(wrapped.clone().into_inner(), jiff::Zoned::from(wrapped));
     Ok(())
 }
 

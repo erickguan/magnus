@@ -624,8 +624,9 @@ magnus = { git = "https://github.com/matsadler/magnus.git" }
 
 The workspace's [`magnus-jiff-timezone`](magnus-jiff-timezone/README.md) gem
 provides `MagnusTimezone`, bundled timezone data, and a native initializer that
-runs when Ruby requires it. Its Rust crate also provides a zoned wrapper.
-Magnus's own `jiff` feature remains limited to timestamp conversion.
+runs when Ruby requires it. Its Ruby class extends Magnus's core
+`JiffTimeZone` backing type; Magnus provides direct `jiff::Zoned` conversion
+through the optional `jiff-zoned` feature.
 
 ### rb-sys
 

@@ -1,96 +1,69 @@
-# Validation
+# Rebuild validation
 
-The implementation passes focused validation on Linux x86_64 with Ruby 3.4.12
-and Rust 1.99.1. We reran all five integration executables, the documentation
-example, the minimal crate build, formatting, and whitespace checks after
-moving registration into `src/lib.rs` and renaming the Ruby class to
-`MagnusTimezone`. All passed without warnings.
+We rebased the timezone follow-up onto upstream `main` at `b2b5ec7`, which
+merged PR #184. Core zoned support lives on `jiff-zoned-core` at `665db9f9`;
+the companion branch builds on that commit.
 
-## Standalone gem revision
+## Verified architecture
 
-The crate now also packages a standalone Ruby gem. We added a Ruby loader,
-gemspec, native extension entry point, independent locked native manifest,
-source-gem build task, and a test that installs the gem outside the checkout.
-The native manifest pins the pushed Timestamp-only Magnus commit because
-Magnus 0.10 is not published. The native initializer calls our existing
-registration function; users only require the gem.
+Magnus owns `time::JiffTimeZone`, its native descriptor, an anonymous lazy
+backing class, the timezone callbacks, and direct conversions for `jiff::Zoned`.
+Core conversion creates no public constant, resolver, or initialization hook.
 
-We validated this revision with `bundle exec rake test`. It built
-`magnus-jiff-timezone-0.1.0.gem`, installed and compiled it outside the checkout,
-and ran the installed gem in ordinary Ruby processes. All nine Ruby tests and
-53 assertions passed, along with fresh-process class/resolver conflict checks.
-Coverage includes automatic registration through `require`, repeated require,
-bundled lookup, all five constructors, DST arithmetic and gaps/folds, local
-fractional seconds, named/native-fixed Marshal, and Marshal restoration in a
-separate process.
+The gem defines `MagnusTimezone` as a subclass of the core backing class and
+adds its five constructors and `Time.find_timezone`. We removed its duplicate
+TypedData implementation, callback module, and public Rust `Zoned` newtype.
+Rust bindings now accept and return `jiff::Zoned` directly.
 
-The initial harness used `--install-dir` with `--local`, which made RubyGems
-ignore the build dependency already available on `GEM_PATH`. We corrected it
-to select the isolated destination with `GEM_HOME`. The passing test keeps the
-bundle's dependencies visible, clears embedding-only flags, and verifies that
-the native library was installed under the temporary gem directory.
+## Completed Rust checks
 
-## Implementation scope
+On Linux x86_64 with Ruby 3.4.12 and Rust 1.99.1:
 
-The crate lives on the separate `magnus-jiff-timezone` bookmark, based on the
-Timestamp-only `jiff` work. The core Magnus timezone implementation remains
-absent. Only the workspace membership, dependency lockfile, and root README
-change outside the new crate. We prepared a dedicated packaged-gem CI job, but
-GitHub rejected pushing workflow changes with the available OAuth credentials.
-We kept that job as a local patch and left the existing workflow unchanged.
-The standalone install-and-test task remains available through Rake.
+- `cargo test --package magnus --test jiff_zoned --test time`: both integration
+  executables pass. The zoned test covers direct Rust bindings, lazy anonymous
+  defaults without public registration, companion subclassing, native UTC and
+  fixed offsets, named and POSIX rules, unknown zones, negative instants,
+  nanoseconds, boundaries, gaps/folds, and both explicit overlap instants.
+- `cargo test --package magnus-jiff-timezone --tests`: all five companion
+  integration executables pass, including constructor/callback/Marshal
+  behavior, class and resolver conflicts, cleanup on registration failure, and
+  repeated registration.
+- `cargo test --package magnus-jiff-timezone --doc`: the raw `jiff::Zoned`
+  binding example compiles.
+- `cargo check --package magnus --lib --no-default-features --features jiff-zoned`
+  and the corresponding `jiff`-only library build pass.
+- Workspace and native-extension formatting checks and whitespace checks pass.
 
-## Coverage
+The companion registration test compiles its registration code twice but
+shares one Magnus dependency. It verifies that a second registration fails
+while direct core conversion can read the first instance's backing data. This
+is not a guarantee that independently linked Ruby extensions share native
+Rust descriptors.
 
-The integration tests port the `backup-jiff` timezone behavior to the new Rust
-wrapper and public `MagnusTimezone` class. Additional tests cover
-automatic wrapper conversion through a bound function, negative instants and
-Jiff timestamp boundaries, foreign resolver and class rejection, repeated
-registration, and cleanup when a frozen `Time` prevents resolver installation.
+The current upstream `gvl` module emits missing-documentation warnings in the
+core test configuration. The minimal zoned feature build passes without the
+new timezone module's earlier binding-macro import warnings.
 
-The independent-provider test compiles the same sources in an additional Rust
-crate so it has a distinct registration cache and native descriptor. It checks
-that the second provider fails and the original objects remain usable. This
-exercises separately compiled provider state in one test executable; it is not
-a packaging test loading two separately built Ruby extension shared libraries.
+## Standalone source gem
 
-## Environment
+The native manifest pins `665db9f9390cadc9ffdb52d86b6bcc3dffae1e9e` from
+`https://github.com/erickguan/magnus` with `jiff-zoned` enabled. We regenerated
+its independent lockfile. The source-gem installation test is running against
+that exact core revision outside the workspace; results are pending.
 
-The installed Ruby 3.4.12 is static. Workspace Rust tests expose its normal gem
-load paths through `RUBYLIB`, export executable symbols, and use GNU bfd because
-LLD rejects an exception-handling relocation in Ruby's precompiled YJIT object.
-These settings apply only to embedded-Ruby validation commands. The standalone
-gem test clears those settings and builds through Ruby's normal extension
+The install test checks `require`, automatic registration, public class
+inheritance, bundled lookup, all constructors, DST arithmetic, gaps/folds,
+local nanoseconds, named/native-fixed Marshal, separate-process restoration,
+and foreign class/resolver preservation.
+
+## Local environment and remaining limits
+
+Workspace Rust tests embed a static Ruby. We expose gem load paths through
+`RUBYLIB`, export executable symbols, and use GNU bfd to avoid a precompiled
+YJIT relocation problem in LLD. These flags apply only to embedded tests. The
+standalone gem test clears those flags and uses Ruby's normal extension
 builder.
 
-## Results
-
-- `cargo test --package magnus-jiff-timezone --tests`: all five integration
-  executables pass, covering timezone behavior, foreign class and resolver
-  conflicts, independent provider rejection, and failed-registration cleanup.
-- `cargo test --package magnus-jiff-timezone --doc`: the registration and wrapper
-  example compiles successfully.
-- `cargo test --package magnus --test time`: the core time integration passes
-  after the standalone packaging changes.
-- `cargo check --package magnus-jiff-timezone --lib --no-default-features`:
-  passes. Bundled data remains enabled because it is mandatory for this crate.
-- `cargo fmt --all --check` and `git diff --check`: pass.
-
-The first compile exposed unsupported `Self::method` references in Magnus's
-binding macros, which generate nested functions. The corrected explicit
-`TimeZoneData::method` references pass compilation and all integration tests.
-Two unused imports in the passing test run were subsequently removed.
-`cargo check --package magnus-jiff-timezone --tests` passes without warnings
-after that cleanup. The final formatting and whitespace checks also pass.
-
-## Review
-
-We ran independent Standards and Spec reviews of the complete timezone
-follow-up through standalone packaging. Neither found a
-confirmed blocker or documented-standard violation. The Spec review noted
-that installation evidence was pending and requested coverage for local-time
-nanoseconds. The successful isolated install supplies that evidence, and the
-added Ruby test verifies fractional seconds for named, fixed, and POSIX zones.
-
-The supported Ruby/OS CI matrix and Rust 1.85 have not been run. The known
-upstream Ruby 3.2 CI header/bindgen failure is separate from this crate.
+We have not run the complete Ruby/OS CI matrix or Rust 1.85 locally. The prior
+OAuth workflow-scope limitation remains: the optional dedicated gem CI job is
+preserved as a local patch, not added to the branch's workflow.
