@@ -1,14 +1,11 @@
 [package]
-name = "magnus-jiff-timezone"
+name = "magnus_jiff"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Standalone Ruby gem and Rust conversions for Jiff timezone rules."
 repository = "https://github.com/matsadler/magnus"
 license = "MIT"
-
-[lib]
-name = "magnus_jiff_timezone"
 
 [dependencies]
 jiff = { version = "0.2.35", default-features = false, features = ["std", "tzdb-bundle-always"] }

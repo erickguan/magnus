@@ -1,5 +1,5 @@
 use magnus::{Error, Ruby, Value, rb_assert};
-use magnus_jiff_timezone::register;
+use magnus_jiff::register;
 
 #[test]
 fn occupied_class_is_rejected_before_defining_a_resolver() {

@@ -1,4 +1,4 @@
-# magnus-jiff-timezone
+# magnus_jiff
 
 We provide a standalone Ruby gem that uses Jiff's timezone rules with Ruby
 `Time`. We always bundle IANA timezone data, so you do not need another timezone
@@ -11,11 +11,11 @@ Installing a source gem requires a published Magnus version with the timezone
 ABI; Magnus 0.10 is not published yet. Once that dependency is available:
 
 ```sh
-gem install ./magnus-jiff-timezone-0.1.0.gem
+gem install ./magnus_jiff-0.1.0.gem
 ```
 
 ```ruby
-require "magnus-jiff-timezone"
+require "magnus_jiff"
 
 zone = MagnusTimezone.find_timezone("America/New_York")
 time = Time.new(2024, 7, 1, 12, 0, 0, in: zone)
@@ -88,8 +88,12 @@ incoming timestamp exceeds Jiff's range, we raise `RangeError`. Ruby's native
 
 The gem owns public registration. We do not replace another library's class
 or resolver. Independently linked extensions exchange timezone strings through
-the [public C header](include/magnus/timezone.h), rather than sharing Jiff's
-private Rust representation.
+the [public C header](magnus_timezone.h), rather than sharing Jiff's
+private Rust representation. Its source lives beside the core implementation
+at `src/magnus_timezone.h` in Magnus; packaging copies it to the gem root.
+Independent native extensions include it to read the portable representation.
+The C fixture in `tests/timezone_abi/fixtures/timezone_c.c` demonstrates both
+reading Rust-created objects and constructing compatible objects in C.
 
 ## Native timezone ABI
 
@@ -128,10 +132,12 @@ value. See the printer's linked documentation for its unnamed-zone limitation.
 
 ## Registration and Marshal
 
-We raise `LoadError` on loading if another library already owns
-`Time.find_timezone` or the `MagnusTimezone` constant. We never replace its
-constants or methods. We also validate repeated registration against the class
-and resolver we originally installed.
+We raise `LoadError` on loading if `Object::MagnusTimezone` is already defined
+or `Time` already responds to `find_timezone`, including a private method.
+An unrelated `TimeZone` constant does not conflict. We leave existing
+constants and methods intact. Repeated registration also raises `LoadError`
+if our original class or resolver was removed or replaced; otherwise it
+succeeds without replacing either.
 
 We restore named zones through `Marshal` after you require the gem in the
 loading process. Native fixed-offset times need no resolver. POSIX and unknown

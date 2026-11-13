@@ -454,7 +454,7 @@ Companion extensions can subclass `JiffTimeZone::class(ruby)` and use
 constructors while reusing Magnus's conversions and callbacks.
 
 We accept native UTC, numeric fixed offsets, and objects implementing the
-[public timezone TypedData ABI](include/magnus/timezone.h). Independently built
+[public timezone TypedData ABI](src/magnus_timezone.h). Independently built
 extensions exchange a portable Jiff timezone string rather than private Rust
 data. Named zones use the receiving extension's database, so their rules may
 differ. Unnamed zones without a portable string retain their rules for Ruby
@@ -625,9 +625,9 @@ magnus = { git = "https://github.com/matsadler/magnus.git" }
 
 ## Crates that work with Magnus
 
-### magnus-jiff-timezone
+### magnus_jiff
 
-The workspace's [`magnus-jiff-timezone`](magnus-jiff-timezone/README.md) gem
+The workspace's [`magnus_jiff`](magnus_jiff/README.md) gem
 provides `MagnusTimezone`, bundled timezone data, and a native initializer that
 runs when Ruby requires it. Its Ruby class extends Magnus's core
 `JiffTimeZone` backing type; Magnus provides direct `jiff::Zoned` conversion

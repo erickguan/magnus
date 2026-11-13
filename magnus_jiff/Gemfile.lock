@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    magnus-jiff-timezone (0.1.0)
+    magnus_jiff (0.1.0)
       rb_sys (~> 0.9.130)
 
 GEM
@@ -18,7 +18,7 @@ PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
-  magnus-jiff-timezone!
+  magnus_jiff!
   minitest (~> 5.0)
   rake (>= 13.0)
 

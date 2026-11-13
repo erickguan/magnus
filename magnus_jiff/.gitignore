@@ -1,5 +1,5 @@
 /pkg/
-/include/
+/magnus_timezone.h
 /tmp/
 /Makefile
 /mkmf.log

@@ -3,7 +3,7 @@
 require "minitest/autorun"
 require "open3"
 require "rbconfig"
-require "magnus-jiff-timezone"
+require "magnus_jiff"
 
 class TimezoneTest < Minitest::Test
   def test_require_registers_once
@@ -11,7 +11,7 @@ class TimezoneTest < Minitest::Test
     assert_nil MagnusTimezone.superclass.name
     assert_equal MagnusTimezone.superclass, MagnusTimezone.instance_method(:utc_to_local).owner
     assert_respond_to Time, :find_timezone
-    refute require("magnus-jiff-timezone")
+    refute require("magnus_jiff")
     assert_equal "Asia/Tokyo", Time.find_timezone("Asia/Tokyo").name
   end
 
@@ -92,7 +92,7 @@ class TimezoneTest < Minitest::Test
     fixed = Time.at(0, in: "+05:30")
     assert_equal fixed.utc_offset, Marshal.load(Marshal.dump(fixed)).utc_offset
     code = <<~RUBY
-      require "magnus-jiff-timezone"
+      require "magnus_jiff"
       time = Marshal.load(STDIN.read)
       puts [time.zone.name, time.nsec, time.utc_offset].join(",")
     RUBY

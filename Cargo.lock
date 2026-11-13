@@ -326,15 +326,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "magnus-jiff-timezone"
-version = "0.1.0"
-dependencies = [
- "jiff",
- "magnus",
- "rb-sys",
-]
-
-[[package]]
 name = "magnus-macros"
 version = "0.9.1"
 dependencies = [
@@ -342,6 +333,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "magnus_jiff"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "magnus",
+ "rb-sys",
 ]
 
 [[package]]

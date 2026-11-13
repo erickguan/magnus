@@ -1,6 +1,6 @@
 //! Standalone Ruby timezone support backed by Jiff.
 //!
-//! Ruby applications load the gem with `require "magnus-jiff-timezone"`. Its
+//! Ruby applications load the gem with `require "magnus_jiff"`. Its
 //! native initializer calls [`register`] to define `MagnusTimezone` and
 //! `Time.find_timezone`. We always bundle IANA timezone data.
 //!
@@ -31,7 +31,7 @@ use magnus::{
 const CLASS_NAME: &str = "MagnusTimezone";
 
 #[cfg(not(test))]
-#[magnus::init(name = "magnus_jiff_timezone")]
+#[magnus::init(name = "magnus_jiff")]
 fn init(ruby: &Ruby) -> Result<(), Error> {
     register(ruby)
 }
@@ -53,9 +53,17 @@ static REGISTRATION: OnceLock<Registration> = OnceLock::new();
 ///
 /// # Errors
 ///
-/// We return Ruby `LoadError` if a foreign class or resolver already exists,
-/// another independently compiled provider registered first, or someone changed
-/// our previous registration. We propagate Ruby allocation and method errors.
+/// We return Ruby `LoadError` in these cases:
+///
+/// - Before the first registration, `Object::MagnusTimezone` is already defined
+///   or `Time` already responds to `find_timezone`, including a private method.
+/// - After registration, `MagnusTimezone` or `Time.find_timezone` was removed
+///   or replaced.
+/// - Registration is already in progress when we attempt to cache its result.
+///
+/// A separately built copy attempting registration encounters the same public
+/// constant and method checks. An unrelated `TimeZone` constant is not a
+/// conflict. We propagate Ruby allocation and method errors.
 pub fn register(ruby: &Ruby) -> Result<(), Error> {
     if let Some(existing) = REGISTRATION.get() {
         return existing.validate(ruby);
@@ -64,7 +72,7 @@ pub fn register(ruby: &Ruby) -> Result<(), Error> {
     if object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
         return Err(conflict(
             ruby,
-            "MagnusTimezone is already defined by another provider",
+            "MagnusTimezone is already defined by another extension",
         ));
     }
     let time = ruby.class_time();
@@ -122,12 +130,7 @@ fn class(ruby: &Ruby) -> Result<RClass, Error> {
     REGISTRATION
         .get()
         .map(|registration| ruby.get_inner(registration.class))
-        .ok_or_else(|| {
-            conflict(
-                ruby,
-                "call magnus_jiff_timezone::register before converting zones",
-            )
-        })
+        .ok_or_else(|| conflict(ruby, "call magnus_jiff::register before converting zones"))
 }
 
 fn conflict(ruby: &Ruby, message: &str) -> Error {

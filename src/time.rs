@@ -12,7 +12,7 @@
 //! We define no public timezone constant or resolver and require no initializer.
 //! Companion extensions can subclass its backing class to add a public interface.
 //! Independently built extensions can read the public C header in
-//! `include/magnus/timezone.h` and reconstruct a timezone from its portable
+//! `src/magnus_timezone.h` and reconstruct a timezone from its portable
 //! string. Named zones resolve against the receiving extension's database;
 //! this does not promise identical rules across database versions. Unnamed
 //! zones without a portable string remain usable in Ruby but cannot be
@@ -551,7 +551,7 @@ mod jiff_timezone {
     // the resolved instant on that argument, never on the shared timezone object.
     const RESOLVED_TIMESTAMP: &str = "@_magnus_jiff_resolved_ts";
 
-    // Keep these definitions in sync with include/magnus/timezone.h. The old
+    // Keep these definitions in sync with src/magnus_timezone.h. The old
     // "magnus Jiff timezone" descriptor predates this header and must not match.
     const DATA_TYPE_NAME: &CStr = c"magnus timezone";
     const ABI_VERSION: u8 = 1;
@@ -574,7 +574,7 @@ mod jiff_timezone {
     /// and registration for that subclass.
     ///
     /// The native allocation starts with the public C header in
-    /// `include/magnus/timezone.h`. Independently built extensions read its
+    /// `src/magnus_timezone.h`. Independently built extensions read its
     /// portable string instead of casting this type's private Rust fields.
     #[repr(C)]
     pub struct JiffTimeZone {

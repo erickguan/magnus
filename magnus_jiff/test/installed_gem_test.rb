@@ -33,9 +33,9 @@ Dir.mktmpdir("magnus-timezone-install-") do |directory|
     abort "Standalone gem installation failed"
   end
 
-  installed = File.join(gem_home, "gems", "magnus-jiff-timezone-#{Gem::Package.new(source_gem).spec.version}")
+  installed = File.join(gem_home, "gems", "magnus_jiff-#{Gem::Package.new(source_gem).spec.version}")
   abort "Installed gem contains no native library" if Dir[File.join(installed, "lib", "**", "*.#{RbConfig::CONFIG.fetch('DLEXT')}")].empty?
-  abort "Installed gem contains no public timezone header" unless File.file?(File.join(installed, "include", "magnus", "timezone.h"))
+  abort "Installed gem contains no public timezone header" unless File.file?(File.join(installed, "magnus_timezone.h"))
   unless system(env, ruby, checks, chdir: directory)
     abort "Installed gem tests failed"
   end
@@ -52,7 +52,7 @@ Dir.mktmpdir("magnus-timezone-install-") do |directory|
     code = <<~RUBY
       #{setup}
       begin
-        require "magnus-jiff-timezone"
+        require "magnus_jiff"
         abort "Expected LoadError"
       rescue LoadError => error
         abort error.full_message unless #{preserved}

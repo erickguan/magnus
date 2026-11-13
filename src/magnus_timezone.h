@@ -6,6 +6,11 @@
 /*
  * Public timezone TypedData ABI, version 1.
  *
+ * Native Ruby extensions include this header to read timezone objects created
+ * by Magnus without depending on Jiff's private Rust layout. Magnus defines
+ * the matching prefix in src/time.rs; tests/timezone_abi/fixtures/timezone_c.c
+ * demonstrates an independent C reader and writer.
+ *
  * First check RB_TYPE_P(value, T_DATA), RTYPEDDATA_P(value), and compare
  * RTYPEDDATA_TYPE(value)->wrap_struct_name to MAGNUS_TIMEZONE_TYPE_NAME.
  * Descriptor addresses and Ruby class names are not interoperability checks.

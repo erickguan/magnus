@@ -3,7 +3,7 @@ use jiff::{
     tz::{Offset, TimeZone},
 };
 use magnus::{Error, IntoValue, Ruby, Time, TryConvert, Value, prelude::*, rb_assert};
-use magnus_jiff_timezone::register;
+use magnus_jiff::register;
 
 fn zoned(timestamp: Timestamp, zone: TimeZone) -> Zoned {
     jiff::Zoned::new(timestamp, zone)

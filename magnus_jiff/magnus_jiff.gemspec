@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 Gem::Specification.new do |spec|
-  spec.name = "magnus-jiff-timezone"
+  spec.name = "magnus_jiff"
   manifest = File.read(File.join(__dir__, "Cargo.toml"))
   spec.version = manifest[/^version = "([^"]+)"$/, 1]
   spec.authors = ["Erick Guan"]
@@ -14,8 +14,8 @@ Gem::Specification.new do |spec|
   spec.extensions = ["extconf.rb"]
   spec.files = Dir.chdir(__dir__) do
     Dir["lib/**/*.rb", "src/**/*.rs", "extconf.rb", "Cargo.toml",
-        "README.md", "LICENSE"].sort + ["include/magnus/timezone.h"]
+        "README.md", "LICENSE"].sort + ["magnus_timezone.h"]
   end
-  spec.metadata["source_code_uri"] = "https://github.com/matsadler/magnus/tree/main/magnus-jiff-timezone"
+  spec.metadata["source_code_uri"] = "https://github.com/matsadler/magnus/tree/main/magnus_jiff"
   spec.add_dependency "rb_sys", "~> 0.9.130"
 end

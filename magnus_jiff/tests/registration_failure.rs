@@ -1,5 +1,5 @@
 use magnus::{Error, Ruby, rb_assert};
-use magnus_jiff_timezone::register;
+use magnus_jiff::register;
 
 #[test]
 fn failed_resolver_installation_does_not_publish_the_class() {

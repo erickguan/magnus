@@ -28,13 +28,13 @@ Dir.mktmpdir("magnus-timezone-interop-") do |directory|
       name = "timezone_probe"
       crate-type = ["cdylib"]
       [features]
-      gem = ["dep:magnus-jiff-timezone"]
+      gem = ["dep:magnus_jiff"]
       [dependencies]
       magnus = { path = #{root.to_json}, default-features = false, features = ["jiff-zoned", "rb-sys"] }
       jiff = { version = "=#{version}", default-features = false, features = ["std", "tz-system", "tzdb-bundle-always"] }
       jiff-tzdb = "=0.1.9"
       rb-sys = { version = "0.9.124", default-features = false, features = ["stable-api-compiled-fallback"] }
-      magnus-jiff-timezone = { path = #{File.join(root, "magnus-jiff-timezone").to_json}, optional = true }
+      magnus_jiff = { path = #{File.join(root, "magnus_jiff").to_json}, optional = true }
     TOML
     File.write(File.join(project, "Cargo.toml"), manifest)
     command = ["cargo", "build", "--manifest-path", File.join(project, "Cargo.toml"), "--message-format", "json-render-diagnostics"]
@@ -65,7 +65,7 @@ Dir.mktmpdir("magnus-timezone-interop-") do |directory|
   FileUtils.cp(File.join(fixtures, "timezone_c.c"), c_project)
   File.write(File.join(c_project, "extconf.rb"), <<~RUBY)
     require "mkmf"
-    $INCFLAGS << " -I" + Shellwords.escape(#{File.join(root, "include").dump})
+    $INCFLAGS << " -I" + Shellwords.escape(#{File.join(root, "src").dump})
     create_makefile("timezone_c")
   RUBY
   [ [RbConfig.ruby, "extconf.rb"], [RbConfig::CONFIG.fetch("MAKE", "make")] ].each do |command|

@@ -1,7 +1,7 @@
 #include <ruby.h>
 #include <stddef.h>
 #include <string.h>
-#include "magnus/timezone.h"
+#include "magnus_timezone.h"
 
 struct TestZone {
     struct MagnusTimeZone header;
