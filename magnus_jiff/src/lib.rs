@@ -1,11 +1,11 @@
 //! Standalone Ruby timezone support backed by Jiff.
 //!
 //! Ruby applications load the gem with `require "magnus_jiff"`. Its
-//! native initializer calls [`register`] to define `MagnusTimezone` and
+//! native initializer calls [`init`] to define `MagnusTimezone` and
 //! `Time.find_timezone`. We always bundle IANA timezone data.
 //!
 //! Magnus owns [`JiffTimeZone`] and implements conversions directly for
-//! [`jiff::Zoned`]. We supply public constructors and registration by subclassing
+//! [`jiff::Zoned`]. We supply public constructors and initialization by subclassing
 //! that backing implementation; this crate defines no Rust `Zoned` newtype.
 //!
 //! ```no_run
@@ -16,9 +16,9 @@
 //! }
 //! ```
 //!
-//! We report registration conflicts instead of replacing another library's
+//! We report initialization conflicts instead of replacing another library's
 //! timezone class or resolver. Ruby's `require` loads the extension once;
-//! repeated calls to registration also succeed while our class remains intact.
+//! repeated calls to initialization also succeed while our class remains intact.
 
 use std::sync::OnceLock;
 
@@ -30,21 +30,15 @@ use magnus::{
 
 const CLASS_NAME: &str = "MagnusTimezone";
 
-#[cfg(not(test))]
-#[magnus::init(name = "magnus_jiff")]
-fn init(ruby: &Ruby) -> Result<(), Error> {
-    register(ruby)
-}
-
-struct Registration {
+struct Initialization {
     class: Opaque<RClass>,
     resolver: Opaque<Value>,
 }
 
 // Keep our class and resolver available for repeated initialization checks.
-static REGISTRATION: OnceLock<Registration> = OnceLock::new();
+static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
 
-/// Registers `MagnusTimezone` and `Time.find_timezone` explicitly.
+/// Initializes `MagnusTimezone` and `Time.find_timezone` explicitly.
 ///
 /// The gem's native initializer calls this function when Ruby requires it.
 /// We define the public class, enable IANA name lookup in Ruby Time, and restore
@@ -55,17 +49,18 @@ static REGISTRATION: OnceLock<Registration> = OnceLock::new();
 ///
 /// We return Ruby `LoadError` in these cases:
 ///
-/// - Before the first registration, `Object::MagnusTimezone` is already defined
+/// - Before the first initialization, `Object::MagnusTimezone` is already defined
 ///   or `Time` already responds to `find_timezone`, including a private method.
-/// - After registration, `MagnusTimezone` or `Time.find_timezone` was removed
+/// - After initialization, `MagnusTimezone` or `Time.find_timezone` was removed
 ///   or replaced.
-/// - Registration is already in progress when we attempt to cache its result.
+/// - Initialization is already in progress when the result is cached.
 ///
-/// A separately built copy attempting registration encounters the same public
+/// A separately built copy attempting initialization encounters the same public
 /// constant and method checks. An unrelated `TimeZone` constant is not a
 /// conflict. We propagate Ruby allocation and method errors.
-pub fn register(ruby: &Ruby) -> Result<(), Error> {
-    if let Some(existing) = REGISTRATION.get() {
+#[cfg_attr(not(test), magnus::init(name = "magnus_jiff"))]
+pub fn init(ruby: &Ruby) -> Result<(), Error> {
+    if let Some(existing) = INITIALIZATION.get() {
         return existing.validate(ruby);
     }
     let object = ruby.class_object();
@@ -95,24 +90,24 @@ pub fn register(ruby: &Ruby) -> Result<(), Error> {
     // Keep the cached values alive even if Ruby removes their public references.
     ruby.gc_register_mark_object(class);
     ruby.gc_register_mark_object(resolver);
-    REGISTRATION
-        .set(Registration {
+    INITIALIZATION
+        .set(Initialization {
             class: class.into(),
             resolver: resolver.into(),
         })
-        .map_err(|_| conflict(ruby, "timezone registration is already in progress"))?;
+        .map_err(|_| conflict(ruby, "timezone initialization is already in progress"))?;
     Ok(())
 }
 
-impl Registration {
+impl Initialization {
     fn validate(&self, ruby: &Ruby) -> Result<(), Error> {
         let object = ruby.class_object();
         if !object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
-            return Err(conflict(ruby, "MagnusTimezone registration was removed"));
+            return Err(conflict(ruby, "MagnusTimezone initialization was removed"));
         }
         let class: Value = object.const_get(CLASS_NAME)?;
         if class.as_raw() != ruby.get_inner(self.class).as_raw() {
-            return Err(conflict(ruby, "MagnusTimezone registration was replaced"));
+            return Err(conflict(ruby, "MagnusTimezone initialization was replaced"));
         }
         let time = ruby.class_time();
         if !time.respond_to("find_timezone", true)? {
@@ -127,10 +122,10 @@ impl Registration {
 }
 
 fn class(ruby: &Ruby) -> Result<RClass, Error> {
-    REGISTRATION
+    INITIALIZATION
         .get()
-        .map(|registration| ruby.get_inner(registration.class))
-        .ok_or_else(|| conflict(ruby, "call magnus_jiff::register before converting zones"))
+        .map(|initialization| ruby.get_inner(initialization.class))
+        .ok_or_else(|| conflict(ruby, "call magnus_jiff::init before converting zones"))
 }
 
 fn conflict(ruby: &Ruby, message: &str) -> Error {

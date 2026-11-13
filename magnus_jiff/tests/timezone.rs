@@ -3,7 +3,7 @@ use jiff::{
     tz::{Offset, TimeZone},
 };
 use magnus::{Error, IntoValue, Ruby, Time, TryConvert, Value, prelude::*, rb_assert};
-use magnus_jiff::register;
+use magnus_jiff::init;
 
 fn zoned(timestamp: Timestamp, zone: TimeZone) -> Zoned {
     jiff::Zoned::new(timestamp, zone)
@@ -15,8 +15,8 @@ fn zoned(timestamp: Timestamp, zone: TimeZone) -> Zoned {
 fn timezone_integration() {
     Ruby::init(|ruby| {
         assert!(!ruby.class_time().respond_to("find_timezone", true)?);
-        register(ruby)?;
-        register(ruby)?;
+        init(ruby)?;
+        init(ruby)?;
         named_zone_arithmetic_and_fold_preserve_the_instant(ruby)?;
         timezone_callbacks_resolve_instants_and_dst(ruby)?;
         zoned_conversion_rejects_unrepresentable_ruby_times(ruby)?;

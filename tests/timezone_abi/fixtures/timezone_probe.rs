@@ -53,9 +53,9 @@ fn coverage() -> Vec<(String, bool)> {
         .collect()
 }
 
-fn register(ruby: &Ruby) -> Result<(), Error> {
+fn initialize_probe(ruby: &Ruby) -> Result<(), Error> {
     #[cfg(feature = "gem")]
-    magnus_jiff::register(ruby)?;
+    magnus_jiff::init(ruby)?;
 
     let module = ruby.define_module(env!("MAGNUS_TIMEZONE_TEST_MODULE"))?;
     module.define_singleton_method("identity", magnus::function!(identity, 1))?;
@@ -77,5 +77,5 @@ fn register(ruby: &Ruby) -> Result<(), Error> {
 
 #[magnus::init(name = "timezone_probe")]
 fn init(ruby: &Ruby) -> Result<(), Error> {
-    register(ruby)
+    initialize_probe(ruby)
 }

@@ -71,7 +71,7 @@ class InteroperabilityTest < Minitest::Test
     assert_equal 0, TimezoneC.layout[1]
     assert_operator TimezoneC.layout[2], :>=, 1
     refute_respond_to MagnusTimezone.unknown, :abi_version
-    refute_respond_to MagnusTimezone.unknown, :representation
+    refute_respond_to MagnusTimezone.unknown, :jiff_timezone
   end
 
   def test_rust_reader_accepts_c_typed_data_without_rust_fields

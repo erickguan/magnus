@@ -6,7 +6,7 @@ require "rbconfig"
 require "magnus_jiff"
 
 class TimezoneTest < Minitest::Test
-  def test_require_registers_once
+  def test_require_initializes_once
     assert_kind_of Class, MagnusTimezone
     assert_nil MagnusTimezone.superclass.name
     assert_equal MagnusTimezone.superclass, MagnusTimezone.instance_method(:utc_to_local).owner

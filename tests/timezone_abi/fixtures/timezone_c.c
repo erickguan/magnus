@@ -39,13 +39,13 @@ static VALUE wrap(VALUE klass, VALUE delegate, VALUE text, VALUE version) {
     zone->header.abi_version = NUM2UINT(version);
     zone->delegate = delegate;
     zone->text = NULL;
-    zone->header.representation = NULL;
+    zone->header.jiff_timezone = NULL;
     if (!NIL_P(text)) {
         const char *bytes = StringValueCStr(text);
         size_t length = (size_t)RSTRING_LEN(text);
         zone->text = ALLOC_N(char, length + 1);
         memcpy(zone->text, bytes, length + 1);
-        zone->header.representation = zone->text;
+        zone->header.jiff_timezone = zone->text;
     }
     return rb_obj_freeze(object);
 }
@@ -92,8 +92,8 @@ static VALUE read_representation(VALUE klass, VALUE object) {
         rb_raise(rb_eTypeError, "unsupported timezone ABI");
     }
     const struct MagnusTimeZone *zone = (const struct MagnusTimeZone *)pointer;
-    if (!zone->representation) rb_raise(rb_eTypeError, "NULL representation");
-    VALUE result = rb_utf8_str_new_cstr(zone->representation);
+    if (!zone->jiff_timezone) rb_raise(rb_eTypeError, "NULL representation");
+    VALUE result = rb_utf8_str_new_cstr(zone->jiff_timezone);
     RB_GC_GUARD(object);
     return result;
 }
@@ -102,7 +102,7 @@ static VALUE layout(VALUE klass) {
     return rb_ary_new_from_args(3,
         SIZET2NUM(sizeof(struct MagnusTimeZone)),
         SIZET2NUM(offsetof(struct MagnusTimeZone, abi_version)),
-        SIZET2NUM(offsetof(struct MagnusTimeZone, representation)));
+        SIZET2NUM(offsetof(struct MagnusTimeZone, jiff_timezone)));
 }
 
 /* An unsupported version must be rejected before reading a full header. */

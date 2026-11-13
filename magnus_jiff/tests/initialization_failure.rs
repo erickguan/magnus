@@ -1,11 +1,11 @@
 use magnus::{Error, Ruby, rb_assert};
-use magnus_jiff::register;
+use magnus_jiff::init;
 
 #[test]
 fn failed_resolver_installation_does_not_publish_the_class() {
     Ruby::init(|ruby| -> Result<(), Error> {
         ruby.eval::<magnus::Value>("Time.freeze")?;
-        let error = register(ruby).unwrap_err();
+        let error = init(ruby).unwrap_err();
         assert!(error.is_kind_of(ruby.exception_frozen_error()), "{error}");
         rb_assert!(
             ruby,

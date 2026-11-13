@@ -32,8 +32,8 @@ MagnusTimezone.posix("EST5EDT,M3.2.0,M11.1.0")
 MagnusTimezone.unknown
 ```
 
-Ruby loads our native extension and registers `MagnusTimezone` when you require
-the gem. You do not write an extension initializer or call `register` yourself.
+Ruby loads our native extension and initializes `MagnusTimezone` when you require
+the gem. You do not write an extension initializer or call `init` yourself.
 Subsequent `require` calls reuse the loaded extension.
 
 We return `nil` for unknown IANA names and raise `ArgumentError` for invalid
@@ -86,7 +86,7 @@ fallback because Magnus's `IntoValue` trait cannot return an error. When an
 incoming timestamp exceeds Jiff's range, we raise `RangeError`. Ruby's native
 `timespec` range also limits which incoming dates we can convert.
 
-The gem owns public registration. We do not replace another library's class
+The gem owns public initialization. We do not replace another library's class
 or resolver. Independently linked extensions exchange timezone strings through
 the [public C header](magnus_timezone.h), rather than sharing Jiff's
 private Rust representation. Its source lives beside the core implementation
@@ -102,7 +102,7 @@ The TypedData descriptor name is `magnus timezone`. Its allocation begins with:
 ```c
 struct MagnusTimeZone {
     uint8_t abi_version; /* 1 */
-    const char *representation;
+    const char *jiff_timezone;
 };
 ```
 
@@ -130,12 +130,12 @@ The original object's Ruby callbacks and same-implementation Rust conversion
 still use its original Jiff rules. Jiff's valid `Etc/Unknown` is a separate
 value. See the printer's linked documentation for its unnamed-zone limitation.
 
-## Registration and Marshal
+## Initialization and Marshal
 
 We raise `LoadError` on loading if `Object::MagnusTimezone` is already defined
 or `Time` already responds to `find_timezone`, including a private method.
 An unrelated `TimeZone` constant does not conflict. We leave existing
-constants and methods intact. Repeated registration also raises `LoadError`
+constants and methods intact. Repeated initialization also raises `LoadError`
 if our original class or resolver was removed or replaced; otherwise it
 succeeds without replacing either.
 
@@ -167,7 +167,7 @@ To build a source archive, run `bundle exec rake build`; we write it under
 and retains the declared Magnus version. Installation therefore requires
 Magnus 0.10 with the timezone ABI to be published. After that release,
 `bundle exec rake installed` tests installation outside the checkout and
-fresh-process registration conflicts. The workspace uses its root Cargo
+fresh-process initialization conflicts. The workspace uses its root Cargo
 lockfile; there is no second native manifest or lockfile.
 
 The core ABI suite lives under `tests/timezone_abi/` in the parent Magnus

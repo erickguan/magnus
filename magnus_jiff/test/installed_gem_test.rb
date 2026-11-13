@@ -40,7 +40,7 @@ Dir.mktmpdir("magnus-timezone-install-") do |directory|
     abort "Installed gem tests failed"
   end
 
-  # Registration conflicts must fail in fresh Ruby processes without replacing
+  # Initialization conflicts must fail in fresh Ruby processes without replacing
   # the pre-existing class or resolver.
   conflicts = [
     ["class MagnusTimezone; end; original = MagnusTimezone",
@@ -62,5 +62,5 @@ Dir.mktmpdir("magnus-timezone-install-") do |directory|
     output, status = Open3.capture2e(env, ruby, "-e", code, chdir: directory)
     abort output unless status.success?
   end
-  puts "Standalone require, Ruby behavior, and registration-conflict checks passed"
+  puts "Standalone require, Ruby behavior, and initialization-conflict checks passed"
 end

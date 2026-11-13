@@ -19,7 +19,7 @@
  * reject unsupported versions before accessing any further fields. Use normal
  * C alignment, not a packed structure. The version byte remains at offset zero.
  *
- * representation is immutable, non-NULL, NUL-terminated UTF-8. The Ruby object
+ * jiff_timezone is immutable, non-NULL, NUL-terminated UTF-8. The Ruby object
  * owns both the header and string; their addresses remain stable until it is
  * collected. Keep the object alive (including RB_GC_GUARD where appropriate)
  * while reading and copy the string before retaining it independently. Never
@@ -41,7 +41,7 @@
 
 struct MagnusTimeZone {
     uint8_t abi_version;
-    const char *representation;
+    const char *jiff_timezone;
 };
 
 #endif
