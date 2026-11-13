@@ -11,6 +11,12 @@
 //! rules in a [`JiffTimeZone`] backing object with a lazy anonymous Ruby class.
 //! We define no public timezone constant or resolver and require no initializer.
 //! Companion extensions can subclass its backing class to add a public interface.
+//! Independently built extensions can read the public C header in
+//! `include/magnus/timezone.h` and reconstruct a timezone from its portable
+//! string. Named zones resolve against the receiving extension's database;
+//! this does not promise identical rules across database versions. Unnamed
+//! zones without a portable string remain usable in Ruby but cannot be
+//! reconstructed by a foreign extension.
 //!
 //! [jiff-timestamp-range]: https://docs.rs/jiff/latest/jiff/struct.Timestamp.html#associatedconstant.MIN
 //!

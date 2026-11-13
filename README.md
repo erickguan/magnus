@@ -453,8 +453,13 @@ Companion extensions can subclass `JiffTimeZone::class(ruby)` and use
 `ruby.obj_wrap_as(JiffTimeZone::new(zone), subclass)` to expose public timezone
 constructors while reusing Magnus's conversions and callbacks.
 
-We accept native UTC, numeric fixed offsets, and our backing objects on input.
-We reject foreign timezone objects and string abbreviations with `TypeError`.
+We accept native UTC, numeric fixed offsets, and objects implementing the
+[public timezone TypedData ABI](include/magnus/timezone.h). Independently built
+extensions exchange a portable Jiff timezone string rather than private Rust
+data. Named zones use the receiving extension's database, so their rules may
+differ. Unnamed zones without a portable string retain their rules for Ruby
+callbacks but report `TypeError` when a foreign extension needs to reconstruct
+them. We reject unrelated timezone objects and string abbreviations.
 Local civil times in gaps or folds raise `ArgumentError`; converting an explicit
 instant preserves either fold occurrence. If Ruby rejects an outgoing zone,
 we warn and return the same instant in UTC. Named-zone Marshal restoration

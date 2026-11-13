@@ -16,7 +16,7 @@ Gem::Specification.new do |spec|
     Dir["lib/**/*.rb", "ext/magnus_jiff_timezone/src/**/*.rs",
         "ext/magnus_jiff_timezone/extconf.rb", "ext/magnus_jiff_timezone/Cargo.toml",
         "ext/magnus_jiff_timezone/Cargo.lock", "src/**/*.rs", "Cargo.toml",
-        "README.md", "LICENSE"].sort
+        "README.md", "LICENSE"].sort + ["include/magnus/timezone.h"]
   end
   spec.metadata["source_code_uri"] = "https://github.com/matsadler/magnus/tree/main/magnus-jiff-timezone"
   spec.add_dependency "rb_sys", "~> 0.9.130"

@@ -1,4 +1,5 @@
 /pkg/
+/include/
 /tmp/
 /ext/magnus_jiff_timezone/Makefile
 /ext/magnus_jiff_timezone/mkmf.log

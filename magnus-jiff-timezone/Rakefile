@@ -7,11 +7,18 @@ require "rubygems/package"
 ROOT = File.expand_path(__dir__)
 SPEC = Gem::Specification.load(File.join(ROOT, "magnus-jiff-timezone.gemspec"))
 PACKAGE = File.join(ROOT, "pkg", "#{SPEC.full_name}.gem")
+PUBLIC_HEADER = File.expand_path("../include/magnus/timezone.h", ROOT)
+PACKAGED_HEADER = File.join(ROOT, "include", "magnus", "timezone.h")
 
-CLOBBER.include(File.join(ROOT, "pkg"))
+CLOBBER.include(File.join(ROOT, "pkg"), File.join(ROOT, "include"))
+
+file PACKAGED_HEADER => PUBLIC_HEADER do
+  mkdir_p File.dirname(PACKAGED_HEADER)
+  cp PUBLIC_HEADER, PACKAGED_HEADER
+end
 
 desc "Build the standalone source gem"
-task :build do
+task build: PACKAGED_HEADER do
   Dir.chdir(ROOT) do
     mkdir_p File.dirname(PACKAGE)
     Gem::Package.build(SPEC, false, false, PACKAGE)
@@ -21,6 +28,11 @@ end
 desc "Install the packaged gem in isolation and test it in Ruby"
 task test: :build do
   ruby File.join(ROOT, "test", "installed_gem_test.rb"), PACKAGE
+end
+
+desc "Test interoperability between independently built Rust and C extensions"
+task :interop do
+  ruby File.join(ROOT, "test", "interoperability.rb")
 end
 
 task default: :test

@@ -66,11 +66,13 @@ Outgoing core conversions may return times with the anonymous backing class;
 our resolver and constructors return the named `MagnusTimezone` subclass.
 
 We convert Ruby `Time` values to Jiff when they use UTC, a numeric UTC offset,
-or one of our timezone objects. We preserve the instant and nanoseconds. For
-our timezone objects, we also preserve Jiff's rules. We raise `TypeError` for
-other providers' timezone objects and string abbreviations because their names
-do not identify the complete rules. We support IANA names such as
-`"America/New_York"` through our resolver.
+or a timezone object implementing the public Magnus timezone TypedData ABI.
+We preserve the instant and nanoseconds. A conversion within the same Magnus
+implementation retains the original Jiff rules. Independently built extensions
+read the portable string and reconstruct their own Jiff timezone. Named zones
+use the receiving extension's database, which can differ from the original.
+We raise `TypeError` for other providers' objects and string abbreviations;
+a name alone does not establish that an object implements our native contract.
 
 When we convert from Rust to Ruby, we use Ruby's built-in representations for
 UTC and fixed offsets. We attach our timezone objects for named, POSIX, and
@@ -83,9 +85,44 @@ incoming timestamp exceeds Jiff's range, we raise `RangeError`. Ruby's native
 `timespec` range also limits which incoming dates we can convert.
 
 The gem owns public registration. We do not replace another library's class
-or resolver. Native data descriptors are shared when Rust code links the same
-Magnus implementation; matching crate versions do not guarantee compatibility
-between independently built shared libraries.
+or resolver. Independently linked extensions exchange timezone strings through
+the [public C header](include/magnus/timezone.h), rather than sharing Jiff's
+private Rust representation.
+
+## Native timezone ABI
+
+The TypedData descriptor name is `magnus timezone`. Its allocation begins with:
+
+```c
+struct MagnusTimeZone {
+    uint8_t abi_version; /* 1 */
+    const char *representation;
+};
+```
+
+Native readers check the descriptor name and version, then copy the immutable,
+NUL-terminated UTF-8 string while keeping the Ruby object alive. Use normal C
+alignment. The string and header remain valid for the object's lifetime; the
+reader must never free them. Ruby exposes ordinary timezone methods, not ABI
+pointers or metadata. The older `magnus Jiff timezone` descriptor has no such
+header and is deliberately rejected.
+
+We use Jiff's
+[timezone printer](https://docs.rs/jiff/0.2.35/jiff/fmt/temporal/struct.DateTimePrinter.html#method.time_zone_to_string)
+and [parser](https://docs.rs/jiff/0.2.35/jiff/fmt/temporal/struct.DateTimeParser.html#method.parse_time_zone).
+IANA names resolve against the reader's database, so local dates, offsets,
+abbreviations, DST flags, and future calculations can differ between database
+versions. Custom [named TZif input](https://docs.rs/jiff/0.2.35/jiff/tz/struct.TimeZone.html#method.tzif)
+can carry rules different from its name; these rules are not transferred.
+Fixed offsets and POSIX rules carry their own portable semantics.
+
+Some unnamed system zones have rules but no portable string. For simplicity,
+ABI version 1 uses the reserved string `magnus:timezone:unrepresentable` rather
+than transferring TZif bytes. Check this marker before parsing: a foreign
+reader raises `TypeError` explaining that the rules cannot be transferred.
+The original object's Ruby callbacks and same-implementation Rust conversion
+still use its original Jiff rules. Jiff's valid `Etc/Unknown` is a separate
+value. See the printer's linked documentation for its unnamed-zone limitation.
 
 ## Registration and Marshal
 
@@ -123,5 +160,10 @@ needs network access to that repository and the Cargo registry. The native
 build has its own lockfile and does not depend on the parent workspace. We use
 the local Magnus source for the workspace Rust tests.
 
-See [the design](docs/design.md), [Ruby protocol research](docs/ruby-timezone-protocol.md),
-and [validation results](docs/validation.md) for details.
+Run `bundle exec rake interop` to build two independent Rust extensions using
+Jiff 0.2.42 and 0.2.35 plus a C reader. It checks both conversion directions,
+GC compaction, ABI errors, and copied-versus-named system TZif examples. Its
+`TIMEZONE_COVERAGE` output counts bundled names and successful string
+round-trips at a specified instant; system fixtures are reported separately.
+These counts measure the fixtures, not real-world installation frequency or
+exact-rule preservation for every historical date.
