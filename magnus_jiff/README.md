@@ -106,6 +106,11 @@ struct MagnusTimeZone {
 };
 ```
 
+The ABI version identifies the C layout and portable-string contract. It is
+independent of the Jiff version, Rust compiler, and timezone database version.
+ABI compatibility permits reading the header; it does not promise identical
+rules when a receiver resolves an IANA name with a different database.
+
 Native readers check the descriptor name and version, then copy the immutable,
 NUL-terminated UTF-8 string while keeping the Ruby object alive. Use normal C
 alignment. The string and header remain valid for the object's lifetime; the
@@ -129,6 +134,19 @@ reader raises `TypeError` explaining that the rules cannot be transferred.
 The original object's Ruby callbacks and same-implementation Rust conversion
 still use its original Jiff rules. Jiff's valid `Etc/Unknown` is a separate
 value. See the printer's linked documentation for its unnamed-zone limitation.
+
+An example is a copied `/etc/localtime` TZif file whose IANA name Jiff cannot
+discover. Jiff retains its transitions in memory, but its
+[`time_zone_to_string` method documents an error for this case](https://docs.rs/jiff/0.2.35/jiff/fmt/temporal/struct.DateTimePrinter.html#method.time_zone_to_string).
+A timezone string cannot carry that unnamed rule set. The core ABI test
+`tests/timezone_abi/test.rb` reproduces this using an isolated copied TZif
+file and compares it with a discoverable named path; it never changes the
+host's `/etc/localtime`.
+
+Fixed offsets, POSIX rules, UTC, and `Etc/Unknown` have portable strings and
+do not use the marker. Custom named TZif is a different limitation: printing
+can succeed while transferring only its name, losing the custom rules. That
+case is tested separately from unrepresentable unnamed zones.
 
 ## Initialization and Marshal
 

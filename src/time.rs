@@ -549,8 +549,21 @@ const RESOLVED_TIMESTAMP: &str = "@_magnus_jiff_resolved_ts";
 // "magnus Jiff timezone" descriptor predates this header and must not match.
 #[cfg(feature = "jiff-zoned")]
 const DATA_TYPE_NAME: &CStr = c"magnus timezone";
+// Versions the C header layout and portable-string contract, independently of
+// the Jiff crate version, compiler, or timezone database. Named zones resolve
+// using the reader's database; ABI compatibility does not imply identical rules.
 #[cfg(feature = "jiff-zoned")]
 const ABI_VERSION: u8 = 1;
+
+// Deliberately omits rule snapshots to keep the string contract simple. Jiff
+// cannot print unnamed TZif zones (for example a copied /etc/localtime whose
+// IANA name cannot be discovered) as a reconstructible timezone string:
+// https://docs.rs/jiff/0.2.35/jiff/fmt/temporal/struct.DateTimePrinter.html#method.time_zone_to_string
+// Ruby callbacks retain the original rules; foreign readers reject this marker.
+// Named custom TZif can print a name but still lose its original rules on
+// reconstruction. Fixed offsets, POSIX rules, UTC and Etc/Unknown are supported.
+// tests/timezone_abi/test.rb covers copied TZif, name-based reconstruction,
+// and bundled-name coverage. This marker is not Jiff's valid Etc/Unknown zone.
 #[cfg(feature = "jiff-zoned")]
 const UNREPRESENTABLE: &CStr = c"magnus:timezone:unrepresentable";
 
