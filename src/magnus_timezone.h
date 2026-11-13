@@ -4,52 +4,26 @@
 #include <stdint.h>
 
 /*
- * Public timezone TypedData ABI, version 1.
+ * Public timezone TypedData ABI, version 1. Use normal C alignment.
  *
- * Native Ruby extensions include this header to read timezone objects created
- * by Magnus without depending on Jiff's private Rust layout. Magnus defines
- * the matching prefix in src/time.rs; tests/timezone_abi/fixtures/timezone_c.c
- * demonstrates an independent C reader and writer.
+ * Require T_DATA, RTYPEDDATA_P, and the MAGNUS_TIMEZONE_TYPE_NAME descriptor
+ * name before reading RTYPEDDATA_DATA. Check abi_version before later fields.
+ * Reject older "magnus Jiff timezone" objects: they have no C header.
  *
- * First check RB_TYPE_P(value, T_DATA), RTYPEDDATA_P(value), and compare
- * RTYPEDDATA_TYPE(value)->wrap_struct_name to MAGNUS_TIMEZONE_TYPE_NAME.
- * Descriptor addresses and Ruby class names are not interoperability checks.
+ * Version compatibility covers only this prefix and its string, never private
+ * Rust/Jiff fields. Even matching Jiff builds have no shared Rust ABI guarantee.
+ * Readers reconstruct their own timezone to avoid foreign Rust ownership/layout.
  *
- * RTYPEDDATA_DATA(value) points to this header. Read abi_version first and
- * reject unsupported versions before accessing any further fields. Use normal
- * C alignment, not a packed structure. The version byte remains at offset zero.
- * The ABI version covers this layout and string contract, not the Jiff crate,
- * Rust compiler, or timezone database version. Compatible headers do not
- * guarantee identical named-zone rules in different databases.
+ * jiff_timezone is non-NULL, immutable, NUL-terminated UTF-8. The object owns
+ * the header and string; both addresses remain stable for its lifetime. Keep
+ * the Ruby object alive while reading (RB_GC_GUARD where needed). Copy before
+ * retaining independently; never free these pointers or read beyond the header.
  *
- * Matching ABI versions authorize reading ONLY this header and its string.
- * They never authorize reading the private Rust/Jiff fields after the header.
- * Independently built extensions may use incompatible Jiff layouts and
- * ownership implementations, even when their Jiff version numbers match.
- * Copy and parse the string to construct a local timezone instead. Magnus
- * accesses its full Rust backing type only when its own TypedData descriptor
- * matches; descriptor-name/ABI-version matching permits only this C prefix.
- *
- * jiff_timezone is immutable, non-NULL, NUL-terminated UTF-8. The Ruby object
- * owns both the header and string; their addresses remain stable until it is
- * collected. Keep the object alive (including RB_GC_GUARD where appropriate)
- * while reading and copy the string before retaining it independently. Never
- * free either pointer or read private fields after this header.
- *
- * Parse the text with Jiff's Temporal timezone parser. IANA names resolve
- * against the reader's database, not necessarily the original rules. Detect
- * MAGNUS_TIMEZONE_UNREPRESENTABLE before parsing and report a conversion error;
- * it deliberately does not transfer unnamed TZif rules. For example, Jiff
- * cannot print a copied /etc/localtime zone with no discoverable IANA name:
+ * Strings use Jiff's Temporal timezone format. Names resolve in the reader's
+ * database, so database differences and custom named TZif can lose source rules.
+ * For simplicity, unnamed TZif rules use MAGNUS_TIMEZONE_UNREPRESENTABLE rather
+ * than a snapshot. Reject it before parsing; Etc/Unknown is a valid distinct zone.
  * https://docs.rs/jiff/0.2.35/jiff/fmt/temporal/struct.DateTimePrinter.html#method.time_zone_to_string
- * This omission keeps the string contract simple. The original object can
- * still use its private rules for Ruby's timezone callbacks. Etc/Unknown is
- * a valid Jiff zone, not this marker. Named custom TZif may print its name,
- * but reconstruction uses the reader's database instead of the custom rules.
- *
- * This is an in-process native contract, not a serialized pointer format.
- * Extensions claiming this descriptor name must provide the documented layout.
- * The older "magnus Jiff timezone" descriptor has no header and must not match.
  */
 #define MAGNUS_TIMEZONE_TYPE_NAME "magnus timezone"
 #define MAGNUS_TIMEZONE_ABI_VERSION UINT8_C(1)

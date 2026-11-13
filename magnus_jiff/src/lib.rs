@@ -1,24 +1,8 @@
-//! Standalone Ruby timezone support backed by Jiff.
+//! Standalone Jiff timezone constructors for Ruby `Time`.
 //!
-//! Ruby applications load the gem with `require "magnus_jiff"`. Its
-//! native initializer calls [`init`] to define `MagnusTimezone` and
-//! `Time.find_timezone`. We always bundle IANA timezone data.
-//!
-//! Magnus owns [`JiffTimeZone`] and implements conversions directly for
-//! [`jiff::Zoned`]. We supply public constructors and initialization by subclassing
-//! that backing implementation; this crate defines no Rust `Zoned` newtype.
-//!
-//! ```no_run
-//! use jiff::Zoned;
-//!
-//! fn identity(time: Zoned) -> Zoned {
-//!     time
-//! }
-//! ```
-//!
-//! We report initialization conflicts instead of replacing another library's
-//! timezone class or resolver. Ruby's `require` loads the extension once;
-//! repeated calls to initialization also succeed while our class remains intact.
+//! `require "magnus_jiff"` calls [`init`] and bundles IANA timezone data.
+//! The gem subclasses Magnus's [`JiffTimeZone`] to reuse its callbacks while
+//! leaving core [`jiff::Zoned`] conversions independent of public Ruby names.
 
 use std::sync::OnceLock;
 
@@ -35,15 +19,12 @@ struct Initialization {
     resolver: Opaque<Value>,
 }
 
-// Keep our class and resolver available for repeated initialization checks.
 static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
 
-/// Initializes `MagnusTimezone` and `Time.find_timezone` explicitly.
+/// Initializes `MagnusTimezone` and `Time.find_timezone`.
 ///
-/// The gem's native initializer calls this function when Ruby requires it.
-/// We define the public class, enable IANA name lookup in Ruby Time, and restore
-/// named zones through Marshal. Repeated calls succeed while our class and
-/// resolver remain installed.
+/// Repeated calls succeed only while the original class and resolver remain
+/// installed, so initialization never replaces another extension's definitions.
 ///
 /// # Errors
 ///
@@ -55,9 +36,7 @@ static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
 ///   or replaced.
 /// - Initialization is already in progress when the result is cached.
 ///
-/// A separately built copy attempting initialization encounters the same public
-/// constant and method checks. An unrelated `TimeZone` constant is not a
-/// conflict. We propagate Ruby allocation and method errors.
+/// Ruby allocation and method errors propagate.
 #[cfg_attr(not(test), magnus::init(name = "magnus_jiff"))]
 pub fn init(ruby: &Ruby) -> Result<(), Error> {
     if let Some(existing) = INITIALIZATION.get() {
@@ -75,8 +54,7 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
         return Err(conflict(ruby, "Time.find_timezone is already defined"));
     }
 
-    // Build the class privately before publishing its constant. Expected
-    // ownership conflicts never replace somebody else's methods or constants.
+    // Publish only after configuration succeeds to avoid a partial public class.
     let class = RClass::new(JiffTimeZone::class(ruby))?;
     configure(class)?;
     object.const_set(CLASS_NAME, class)?;

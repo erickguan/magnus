@@ -7,17 +7,10 @@
 //! raises `RangeError` with `"out of Time range"` for values outside
 //! [Jiff's supported timestamp range][jiff-timestamp-range].
 //!
-//! With `jiff-zoned`, Magnus also converts [`jiff::Zoned`] directly. Magnus
-//! preserves timezone rules in a [`JiffTimeZone`] backing object with a lazy
-//! anonymous Ruby class. Magnus defines no public timezone constant or resolver
-//! and requires no initializer.
-//! Companion extensions can subclass its backing class to add a public interface.
-//! Independently built extensions can read the public C header in
-//! `src/magnus_timezone.h` and reconstruct a timezone from its portable
-//! string. Named zones resolve against the receiving extension's database;
-//! this does not promise identical rules across database versions. Unnamed
-//! zones without a portable string remain usable in Ruby but cannot be
-//! reconstructed by a foreign extension.
+//! With `jiff-zoned`, Magnus converts [`jiff::Zoned`] using [`JiffTimeZone`].
+//! Core conversions install no public constant or resolver; the `magnus_jiff`
+//! gem supplies those. Independent extensions exchange portable strings through
+//! `src/magnus_timezone.h`, so named zones use the receiver's database.
 //!
 //! [jiff-timestamp-range]: https://docs.rs/jiff/latest/jiff/struct.Timestamp.html#associatedconstant.MIN
 //!
@@ -545,28 +538,16 @@ impl TryConvert for chrono::DateTime<chrono::FixedOffset> {
 #[cfg(feature = "jiff-zoned")]
 const RESOLVED_TIMESTAMP: &str = "@_magnus_jiff_resolved_ts";
 
-// Keep these definitions in sync with src/magnus_timezone.h. The old
-// "magnus Jiff timezone" descriptor predates this header and must not match.
+// This name excludes older payloads that lack the C header.
 #[cfg(feature = "jiff-zoned")]
 const DATA_TYPE_NAME: &CStr = c"magnus timezone";
-// Versions the C header layout and portable-string contract, independently of
-// the Jiff crate version, compiler, or timezone database. Named zones resolve
-// using the reader's database; ABI compatibility does not imply identical rules.
-// A matching ABI version permits reading only MagnusTimeZone and its string.
-// It never permits casting a foreign payload to JiffTimeZone or reading its
-// private Jiff fields, even when both extensions use the same Jiff version.
+// Versions only the public C contract; private Jiff fields remain build-specific.
 #[cfg(feature = "jiff-zoned")]
 const ABI_VERSION: u8 = 1;
 
-// Deliberately omits rule snapshots to keep the string contract simple. Jiff
-// cannot print unnamed TZif zones (for example a copied /etc/localtime whose
-// IANA name cannot be discovered) as a reconstructible timezone string:
+// Keep interchange string-only rather than retain TZif snapshots. Unnamed
+// TZif can fail to print; the original rules remain available to Ruby callbacks.
 // https://docs.rs/jiff/0.2.35/jiff/fmt/temporal/struct.DateTimePrinter.html#method.time_zone_to_string
-// Ruby callbacks retain the original rules; foreign readers reject this marker.
-// Named custom TZif can print a name but still lose its original rules on
-// reconstruction. Fixed offsets, POSIX rules, UTC and Etc/Unknown are supported.
-// tests/timezone_abi/test.rb covers copied TZif, name-based reconstruction,
-// and bundled-name coverage. This marker is not Jiff's valid Etc/Unknown zone.
 #[cfg(feature = "jiff-zoned")]
 const UNREPRESENTABLE: &CStr = c"magnus:timezone:unrepresentable";
 
@@ -577,37 +558,21 @@ struct MagnusTimeZone {
     jiff_timezone: *const c_char,
 }
 
-/// Jiff timezone rules stored in a Ruby timezone-protocol object.
+/// Jiff rules backing Ruby's timezone protocol and direct [`jiff::Zoned`] conversions.
 ///
-/// When converting a named, POSIX, or unknown [`jiff::Zoned`] to Ruby,
-/// Magnus wraps this type and attaches the Ruby object as `Time#zone`.
-/// Its callbacks provide offset, DST, abbreviation, and civil-time
-/// conversion using the original Jiff rules. Native UTC and fixed-offset
-/// Ruby times do not need this backing object.
+/// The `magnus_jiff` gem subclasses [`TypedData::class`] and constructs instances
+/// with [`Ruby::obj_wrap_as`] to reuse these callbacks. Magnus keeps the default
+/// class anonymous so core conversion does not claim a public Ruby name.
 ///
-/// The `magnus_jiff` gem uses [`TypedData::class`] to create its public
-/// `MagnusTimezone` subclass. Its constructors wrap this type with
-/// [`Ruby::obj_wrap_as`], reusing Magnus's timezone callbacks. Magnus itself
-/// creates an anonymous class lazily and registers no public constant or
-/// name resolver.
-///
-/// This backing type stores the public C header, the original Jiff
-/// [`TimeZone`], and the portable string's allocation. The C layout keeps
-/// that header at the start of the allocation. Independent native readers
-/// use only the header defined in `src/magnus_timezone.h`, never the
-/// private Rust fields. Matching ABI versions do not make those fields
-/// compatible between independently built extensions, even with the same Jiff
-/// version. Magnus reads the original Rust value only when its own TypedData
-/// descriptor matches; foreign descriptors use the portable string to build a
-/// new local [`TimeZone`].
+/// Independent extensions use only the C prefix in `src/magnus_timezone.h`;
+/// matching ABI versions do not make the private Jiff fields compatible.
 #[cfg(feature = "jiff-zoned")]
 #[cfg_attr(docsrs, doc(cfg(feature = "jiff-zoned")))]
 #[repr(C)]
 pub struct JiffTimeZone {
-    // First field at offset zero: matches struct MagnusTimeZone in the C header.
+    // Must stay first: native readers borrow this C prefix.
     header: MagnusTimeZone,
     zone: TimeZone,
-    // Owns the stable NUL-terminated bytes referenced by header.jiff_timezone.
     timezone_string: CString,
 }
 
@@ -619,11 +584,7 @@ unsafe impl Send for JiffTimeZone {}
 
 #[cfg(feature = "jiff-zoned")]
 impl JiffTimeZone {
-    /// Stores a Jiff timezone without registering Ruby classes or methods.
-    ///
-    /// C readers borrow a cached portable representation for this object's
-    /// lifetime. Zones without a portable string use the reserved marker,
-    /// while Ruby callbacks and local Rust access retain the original rules.
+    /// Creates a backing object retaining the original Jiff rules.
     pub fn new(zone: TimeZone) -> Self {
         let timezone_string = DateTimePrinter::new()
             .time_zone_to_string(&zone)
@@ -638,16 +599,6 @@ impl JiffTimeZone {
             zone,
             timezone_string,
         }
-    }
-
-    /// Borrows the original timezone rules.
-    pub fn as_inner(&self) -> &TimeZone {
-        &self.zone
-    }
-
-    /// Extracts the original timezone rules.
-    pub fn into_inner(self) -> TimeZone {
-        self.zone
     }
 
     fn local_to_utc(ruby: &Ruby, this: &Self, tm: Value) -> Result<Time, Error> {
@@ -850,13 +801,10 @@ fn portable_timezone(value: Value) -> Result<Option<TimeZone>, Error> {
 fn from_time(time: Time) -> Result<TimeZone, Error> {
     let ruby = Ruby::get_with(time);
     let zone: Value = time.funcall("zone", ())?;
-    // Descriptor identity validates access to this implementation's Rust type.
-    // Matching C ABI or Jiff versions alone never authorize this cast.
+    // Only descriptor identity permits native Rust access; the portable ABI does not.
     if let Ok(zone) = Obj::<JiffTimeZone>::try_convert(zone) {
         return Ok(zone.zone.clone());
     }
-    // A foreign extension exposes only the C prefix and borrowed string.
-    // Reconstruct locally without accessing its private Jiff fields.
     if let Some(zone) = portable_timezone(zone)? {
         return Ok(zone);
     }
@@ -888,7 +836,6 @@ fn time_from_timestamp(ruby: &Ruby, timestamp: Timestamp, offset: Offset) -> Res
     )
 }
 
-/// Preserve rules in a private protocol object without installing a resolver.
 #[cfg(feature = "jiff-zoned")]
 impl crate::IntoValue for jiff::Zoned {
     fn into_value_with(self, ruby: &Ruby) -> Value {
@@ -923,7 +870,6 @@ impl crate::IntoValue for jiff::Zoned {
     }
 }
 
-/// Recover an instant and supported rules from Ruby without guessing from names.
 #[cfg(feature = "jiff-zoned")]
 impl TryConvert for jiff::Zoned {
     fn try_convert(value: Value) -> Result<Self, Error> {
