@@ -1,0 +1,17 @@
+[package]
+name = "magnus-jiff-timezone"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Standalone Ruby gem and Rust conversions for Jiff timezone rules."
+repository = "https://github.com/matsadler/magnus"
+license = "MIT"
+
+[dependencies]
+jiff = { version = "0.2.35", default-features = false, features = ["std", "tzdb-bundle-always"] }
+magnus = { version = "0.10.0", path = "..", default-features = false, features = ["jiff-zoned", "rb-sys"] }
+rb-sys = { version = "0.9.124", default-features = false }
+
+[dev-dependencies]
+magnus = { path = "..", default-features = false, features = ["embed", "jiff-zoned", "rb-sys"] }
+rb-sys = { version = "0.9.124", default-features = false, features = ["stable-api-compiled-fallback"] }

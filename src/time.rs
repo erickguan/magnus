@@ -7,9 +7,20 @@
 //! raises `RangeError` with `"out of Time range"` for values outside
 //! [Jiff's supported timestamp range][jiff-timestamp-range].
 //!
+//! With `jiff-zoned`, we also convert [`jiff::Zoned`] directly. We preserve
+//! rules in a [`JiffTimeZone`] backing object with a lazy anonymous Ruby class.
+//! We define no public timezone constant or resolver and require no initializer.
+//! Companion extensions can subclass its backing class to add a public interface.
+//!
 //! [jiff-timestamp-range]: https://docs.rs/jiff/latest/jiff/struct.Timestamp.html#associatedconstant.MIN
 //!
 //! See also [`Ruby`](Ruby#time) for more Time related methods.
+
+#[cfg(feature = "jiff-zoned")]
+mod jiff_timezone;
+#[cfg(feature = "jiff-zoned")]
+#[cfg_attr(docsrs, doc(cfg(feature = "jiff-zoned")))]
+pub use self::jiff_timezone::JiffTimeZone;
 
 use std::{
     ffi::c_int,
