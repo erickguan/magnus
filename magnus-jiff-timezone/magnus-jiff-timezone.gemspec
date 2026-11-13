@@ -11,11 +11,9 @@ Gem::Specification.new do |spec|
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2"
   spec.require_paths = ["lib"]
-  spec.extensions = ["ext/magnus_jiff_timezone/extconf.rb"]
+  spec.extensions = ["extconf.rb"]
   spec.files = Dir.chdir(__dir__) do
-    Dir["lib/**/*.rb", "ext/magnus_jiff_timezone/src/**/*.rs",
-        "ext/magnus_jiff_timezone/extconf.rb", "ext/magnus_jiff_timezone/Cargo.toml",
-        "ext/magnus_jiff_timezone/Cargo.lock", "src/**/*.rs", "Cargo.toml",
+    Dir["lib/**/*.rb", "src/**/*.rs", "extconf.rb", "Cargo.toml",
         "README.md", "LICENSE"].sort + ["include/magnus/timezone.h"]
   end
   spec.metadata["source_code_uri"] = "https://github.com/matsadler/magnus/tree/main/magnus-jiff-timezone"

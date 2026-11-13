@@ -30,6 +30,12 @@ use magnus::{
 
 const CLASS_NAME: &str = "MagnusTimezone";
 
+#[cfg(not(test))]
+#[magnus::init(name = "magnus_jiff_timezone")]
+fn init(ruby: &Ruby) -> Result<(), Error> {
+    register(ruby)
+}
+
 struct Registration {
     class: Opaque<RClass>,
     resolver: Opaque<Value>,

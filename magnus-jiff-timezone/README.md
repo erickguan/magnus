@@ -6,7 +6,9 @@ gem or a system timezone database.
 
 ## Install and use
 
-Install a built source gem with RubyGems, then require it:
+During development, [build and test from the checkout](#build-and-test-from-source).
+Installing a source gem requires a published Magnus version with the timezone
+ABI; Magnus 0.10 is not published yet. Once that dependency is available:
 
 ```sh
 gem install ./magnus-jiff-timezone-0.1.0.gem
@@ -148,19 +150,23 @@ bundle install
 bundle exec rake test
 ```
 
-The test task builds a source gem, installs it outside the checkout into a
-temporary gem directory, and tests `require`, timezone behavior, Marshal across
-processes, and registration conflicts. To build only the source archive, run
-`bundle exec rake build`; we write it under `pkg/`.
+The gem has one `Cargo.toml`, a native initializer and implementation in
+`src/lib.rs`, and a root `extconf.rb`. Workspace builds use the local Magnus
+checkout through `path = ".."`; there is no Git dependency or nested native
+crate. The test task builds through `extconf.rb` and tests `require`, timezone
+behavior, and Marshal across processes against that local extension.
 
-Magnus 0.10 is not published yet. The installed gem's native build therefore
-pins the portable timezone ABI implementation at `f9b812b4c61e0cce8bc9ebd226cabc77b6b95f1e`
-in `https://github.com/erickguan/magnus`. Installing this development source gem
-needs network access to that repository and the Cargo registry. The native
-build has its own lockfile and does not depend on the parent workspace. We use
-the local Magnus source for the workspace Rust tests.
+To build a source archive, run `bundle exec rake build`; we write it under
+`pkg/`. Packaging removes the local dependency path from the staged manifest
+and retains the declared Magnus version. Installation therefore requires
+Magnus 0.10 with the timezone ABI to be published. After that release,
+`bundle exec rake installed` tests installation outside the checkout and
+fresh-process registration conflicts. The workspace uses its root Cargo
+lockfile; there is no second native manifest or lockfile.
 
-Run `bundle exec rake interop` to build two independent Rust extensions using
+The core ABI suite lives under `tests/timezone_abi/` in the parent Magnus
+repository. Run `bundle exec rake interop` to build two independent Rust
+extensions using
 Jiff 0.2.42 and 0.2.35 plus a C reader. It checks both conversion directions,
 GC compaction, ABI errors, and copied-versus-named system TZif examples. Its
 `TIMEZONE_COVERAGE` output counts bundled names and successful string

@@ -1,9 +1,8 @@
 /pkg/
 /include/
 /tmp/
-/ext/magnus_jiff_timezone/Makefile
-/ext/magnus_jiff_timezone/mkmf.log
-/ext/magnus_jiff_timezone/*.so
-/ext/magnus_jiff_timezone/*.bundle
-/ext/magnus_jiff_timezone/*.dll
-/ext/magnus_jiff_timezone/target/
+/Makefile
+/mkmf.log
+/*.so
+/*.bundle
+/*.dll

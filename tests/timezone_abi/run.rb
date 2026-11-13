@@ -74,16 +74,6 @@ Dir.mktmpdir("magnus-timezone-interop-") do |directory|
   end
   libraries << File.join(c_project, "timezone_c.#{RbConfig::CONFIG.fetch('DLEXT')}")
 
-  checks = File.join(__dir__, "interoperability_test.rb")
+  checks = File.join(__dir__, "test.rb")
   abort "Cross-extension tests failed" unless system(RbConfig.ruby, checks, *libraries)
-  # Run the existing gem behavior tests against the actual current registration
-  # code in the independently built source extension, not the old Git pin.
-  gem_lib = File.join(directory, "gem", "lib")
-  native_lib = File.join(gem_lib, "magnus_jiff_timezone")
-  FileUtils.mkdir_p(native_lib)
-  FileUtils.cp(File.join(root, "magnus-jiff-timezone", "lib", "magnus-jiff-timezone.rb"), gem_lib)
-  FileUtils.cp(libraries.first, File.join(native_lib, "magnus_jiff_timezone.#{RbConfig::CONFIG.fetch('DLEXT')}"))
-  abort "Ruby timezone tests failed" unless system(
-    {"RUBYLIB" => gem_lib}, RbConfig.ruby, File.join(__dir__, "timezone_test.rb")
-  )
 end

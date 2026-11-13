@@ -79,9 +79,3 @@ fn register(ruby: &Ruby) -> Result<(), Error> {
 fn init(ruby: &Ruby) -> Result<(), Error> {
     register(ruby)
 }
-
-#[cfg(feature = "gem")]
-#[magnus::init(name = "magnus_jiff_timezone")]
-fn init_gem(ruby: &Ruby) -> Result<(), Error> {
-    register(ruby)
-}

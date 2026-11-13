@@ -2,37 +2,69 @@
 
 require "rake"
 require "rake/clean"
+require "rbconfig"
 require "rubygems/package"
+require "tmpdir"
 
 ROOT = File.expand_path(__dir__)
 SPEC = Gem::Specification.load(File.join(ROOT, "magnus-jiff-timezone.gemspec"))
 PACKAGE = File.join(ROOT, "pkg", "#{SPEC.full_name}.gem")
 PUBLIC_HEADER = File.expand_path("../include/magnus/timezone.h", ROOT)
 PACKAGED_HEADER = File.join(ROOT, "include", "magnus", "timezone.h")
+NATIVE_LIBRARY = File.join(ROOT, "magnus_jiff_timezone.#{RbConfig::CONFIG.fetch('DLEXT')}")
 
-CLOBBER.include(File.join(ROOT, "pkg"), File.join(ROOT, "include"))
+CLOBBER.include(File.join(ROOT, "pkg"), File.join(ROOT, "include"),
+                NATIVE_LIBRARY, File.join(ROOT, "Makefile"), File.join(ROOT, "mkmf.log"))
 
 file PACKAGED_HEADER => PUBLIC_HEADER do
   mkdir_p File.dirname(PACKAGED_HEADER)
   cp PUBLIC_HEADER, PACKAGED_HEADER
 end
 
-desc "Build the standalone source gem"
-task build: PACKAGED_HEADER do
+desc "Build the native extension against the local Magnus checkout"
+task :compile do
   Dir.chdir(ROOT) do
-    mkdir_p File.dirname(PACKAGE)
-    Gem::Package.build(SPEC, false, false, PACKAGE)
+    ruby "extconf.rb"
+    sh RbConfig::CONFIG.fetch("MAKE", "make")
   end
 end
 
-desc "Install the packaged gem in isolation and test it in Ruby"
-task test: :build do
+desc "Test the local native extension in Ruby"
+task test: :compile do
+  Dir.mktmpdir("magnus-timezone-test-") do |library|
+    native = File.join(library, "magnus_jiff_timezone")
+    FileUtils.mkdir_p(native)
+    FileUtils.cp(File.join(ROOT, "lib", "magnus-jiff-timezone.rb"), library)
+    FileUtils.cp(NATIVE_LIBRARY, native)
+    sh({"RUBYLIB" => library}, RbConfig.ruby, File.join(ROOT, "test", "timezone_test.rb"))
+  end
+end
+
+desc "Build a source gem (installation requires a published Magnus version)"
+task build: PACKAGED_HEADER do
+  FileUtils.mkdir_p(File.dirname(PACKAGE))
+  Dir.mktmpdir("magnus-timezone-package-") do |stage|
+    SPEC.files.each do |file|
+      destination = File.join(stage, file)
+      FileUtils.mkdir_p(File.dirname(destination))
+      FileUtils.cp(File.join(ROOT, file), destination)
+    end
+    # Keep local paths in the checkout; distributed gems resolve the declared
+    # Magnus version from the registry. No Git source or extra manifest needed.
+    manifest = File.join(stage, "Cargo.toml")
+    File.write(manifest, File.read(manifest).gsub(', path = ".."', ""))
+    Dir.chdir(stage) { Gem::Package.build(SPEC, false, false, PACKAGE) }
+  end
+end
+
+desc "Install and test the source gem after its Magnus dependency is published"
+task installed: :build do
   ruby File.join(ROOT, "test", "installed_gem_test.rb"), PACKAGE
 end
 
-desc "Test interoperability between independently built Rust and C extensions"
+desc "Test the core timezone ABI between independent Rust and C extensions"
 task :interop do
-  ruby File.join(ROOT, "test", "interoperability.rb")
+  ruby File.expand_path("../tests/timezone_abi/run.rb", ROOT)
 end
 
 task default: :test
