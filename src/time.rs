@@ -552,6 +552,9 @@ const DATA_TYPE_NAME: &CStr = c"magnus timezone";
 // Versions the C header layout and portable-string contract, independently of
 // the Jiff crate version, compiler, or timezone database. Named zones resolve
 // using the reader's database; ABI compatibility does not imply identical rules.
+// A matching ABI version permits reading only MagnusTimeZone and its string.
+// It never permits casting a foreign payload to JiffTimeZone or reading its
+// private Jiff fields, even when both extensions use the same Jiff version.
 #[cfg(feature = "jiff-zoned")]
 const ABI_VERSION: u8 = 1;
 
@@ -592,7 +595,11 @@ struct MagnusTimeZone {
 /// [`TimeZone`], and the portable string's allocation. The C layout keeps
 /// that header at the start of the allocation. Independent native readers
 /// use only the header defined in `src/magnus_timezone.h`, never the
-/// private Rust fields.
+/// private Rust fields. Matching ABI versions do not make those fields
+/// compatible between independently built extensions, even with the same Jiff
+/// version. Magnus reads the original Rust value only when its own TypedData
+/// descriptor matches; foreign descriptors use the portable string to build a
+/// new local [`TimeZone`].
 #[cfg(feature = "jiff-zoned")]
 #[cfg_attr(docsrs, doc(cfg(feature = "jiff-zoned")))]
 #[repr(C)]
@@ -843,9 +850,13 @@ fn portable_timezone(value: Value) -> Result<Option<TimeZone>, Error> {
 fn from_time(time: Time) -> Result<TimeZone, Error> {
     let ruby = Ruby::get_with(time);
     let zone: Value = time.funcall("zone", ())?;
+    // Descriptor identity validates access to this implementation's Rust type.
+    // Matching C ABI or Jiff versions alone never authorize this cast.
     if let Ok(zone) = Obj::<JiffTimeZone>::try_convert(zone) {
         return Ok(zone.zone.clone());
     }
+    // A foreign extension exposes only the C prefix and borrowed string.
+    // Reconstruct locally without accessing its private Jiff fields.
     if let Some(zone) = portable_timezone(zone)? {
         return Ok(zone);
     }

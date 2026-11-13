@@ -111,6 +111,19 @@ independent of the Jiff version, Rust compiler, and timezone database version.
 ABI compatibility permits reading the header; it does not promise identical
 rules when a receiver resolves an IANA name with a different database.
 
+**Matching ABI versions do not make private Jiff data compatible.** A foreign
+extension may read only the C header and its string. It must not cast the
+allocation to Magnus's Rust `JiffTimeZone` or read the Jiff `TimeZone` stored
+after the header. Different builds can have incompatible layouts and ownership
+implementations; matching Jiff version numbers do not establish compatibility.
+
+Magnus accesses the original Rust value only when its own TypedData descriptor
+matches. For an independently built extension's descriptor, Magnus checks the
+public name and ABI version, copies the string, and parses a new local Jiff
+`TimeZone`. The interoperability tests exercise this path with separate
+descriptors and Jiff 0.2.42 and 0.2.35. They verify portable exchange, not shared
+Rust-layout compatibility.
+
 Native readers check the descriptor name and version, then copy the immutable,
 NUL-terminated UTF-8 string while keeping the Ruby object alive. Use normal C
 alignment. The string and header remain valid for the object's lifetime; the

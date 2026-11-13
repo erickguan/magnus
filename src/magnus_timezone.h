@@ -22,6 +22,14 @@
  * Rust compiler, or timezone database version. Compatible headers do not
  * guarantee identical named-zone rules in different databases.
  *
+ * Matching ABI versions authorize reading ONLY this header and its string.
+ * They never authorize reading the private Rust/Jiff fields after the header.
+ * Independently built extensions may use incompatible Jiff layouts and
+ * ownership implementations, even when their Jiff version numbers match.
+ * Copy and parse the string to construct a local timezone instead. Magnus
+ * accesses its full Rust backing type only when its own TypedData descriptor
+ * matches; descriptor-name/ABI-version matching permits only this C prefix.
+ *
  * jiff_timezone is immutable, non-NULL, NUL-terminated UTF-8. The Ruby object
  * owns both the header and string; their addresses remain stable until it is
  * collected. Keep the object alive (including RB_GC_GUARD where appropriate)
