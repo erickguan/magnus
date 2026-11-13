@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 jiff = { version = "0.2.35", default-features = false, features = ["std", "tzdb-bundle-always"] }
-# Magnus 0.10 is unreleased. Pin the rebuilt core zoned implementation rather
+# Magnus 0.10 is unreleased. Pin the portable timezone ABI implementation rather
 # than relying on the parent checkout or a moving branch during gem installation.
-magnus = { git = "https://github.com/erickguan/magnus", rev = "665db9f9390cadc9ffdb52d86b6bcc3dffae1e9e", default-features = false, features = ["jiff-zoned", "rb-sys"] }
+magnus = { git = "https://github.com/erickguan/magnus", rev = "f9b812b4c61e0cce8bc9ebd226cabc77b6b95f1e", default-features = false, features = ["jiff-zoned", "rb-sys"] }
 rb-sys = { version = "0.9.124", default-features = false, features = ["stable-api-compiled-fallback"] }

@@ -154,7 +154,7 @@ processes, and registration conflicts. To build only the source archive, run
 `bundle exec rake build`; we write it under `pkg/`.
 
 Magnus 0.10 is not published yet. The installed gem's native build therefore
-pins the rebuilt core zoned implementation at `665db9f9390cadc9ffdb52d86b6bcc3dffae1e9e`
+pins the portable timezone ABI implementation at `f9b812b4c61e0cce8bc9ebd226cabc77b6b95f1e`
 in `https://github.com/erickguan/magnus`. Installing this development source gem
 needs network access to that repository and the Cargo registry. The native
 build has its own lockfile and does not depend on the parent workspace. We use
