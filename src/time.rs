@@ -560,12 +560,7 @@ struct MagnusTimeZone {
 
 /// Jiff rules backing Ruby's timezone protocol and direct [`jiff::Zoned`] conversions.
 ///
-/// The `magnus_jiff` gem subclasses [`TypedData::class`] and constructs instances
-/// with [`Ruby::obj_wrap_as`] to reuse these callbacks. Magnus keeps the default
-/// class anonymous so core conversion does not claim a public Ruby name.
-///
-/// Independent extensions use only the C prefix in `src/magnus_timezone.h`;
-/// matching ABI versions do not make the private Jiff fields compatible.
+/// Implements the native timezone ABI defined in `src/magnus_timezone.h`.
 #[cfg(feature = "jiff-zoned")]
 #[cfg_attr(docsrs, doc(cfg(feature = "jiff-zoned")))]
 #[repr(C)]
@@ -602,10 +597,13 @@ impl JiffTimeZone {
     }
 
     fn local_to_utc(ruby: &Ruby, this: &Self, tm: Value) -> Result<Time, Error> {
-        let seconds: i64 = tm.funcall("to_i", ())?;
-        let provisional = Timestamp::from_second(seconds)
+        let seconds = callback_timespec(ruby, tm)?.tv_sec as i64;
+        // Civil dates have a wider range than timestamps; validate the instant
+        // only after applying the timezone's rules.
+        let civil = jiff::civil::date(1970, 1, 1)
+            .at(0, 0, 0, 0)
+            .checked_add(jiff::SignedDuration::from_secs(seconds))
             .map_err(|err| Error::new(ruby.exception_arg_error(), err.to_string()))?;
-        let civil = jiff::tz::Offset::UTC.to_datetime(provisional);
         let timestamp = this
             .zone
             .to_ambiguous_timestamp(civil)
@@ -733,14 +731,19 @@ fn set_resolved_timestamp(ruby: &Ruby, tm: Value, timestamp: Timestamp) -> Resul
 }
 
 #[cfg(feature = "jiff-zoned")]
-fn callback_timestamp(ruby: &Ruby, tm: Value) -> Result<Timestamp, Error> {
-    // Time::tm shares Time's native data type but is not a subclass of Time.
-    // The C API reads that data without dispatching an overridable to_i.
+fn callback_timespec(ruby: &Ruby, tm: Value) -> Result<rb_sys::timespec, Error> {
+    // Time::tm is not a Time subclass, so read its shared native data type.
     let mut ts: rb_sys::timespec = unsafe { std::mem::zeroed() };
     protect(|| unsafe {
         ts = rb_sys::rb_time_timespec(tm.as_rb_value());
         ruby.qnil()
     })?;
+    Ok(ts)
+}
+
+#[cfg(feature = "jiff-zoned")]
+fn callback_timestamp(ruby: &Ruby, tm: Value) -> Result<Timestamp, Error> {
+    let ts = callback_timespec(ruby, tm)?;
     let out_of_range = || Error::new(ruby.exception_range_error(), "out of Time range");
     let nanoseconds = i32::try_from(ts.tv_nsec).map_err(|_| out_of_range())?;
     Timestamp::new(ts.tv_sec as _, nanoseconds).map_err(|_| out_of_range())
@@ -861,9 +864,16 @@ impl crate::IntoValue for jiff::Zoned {
         match result {
             Ok(time) => time.as_value(),
             Err(err) => {
-                ruby.warning(&format!(
-                    "could not represent Jiff timezone in Ruby Time ({err}); using UTC"
-                ));
+                let message = CString::new(
+                    format!("could not represent Jiff timezone in Ruby Time ({err}); using UTC")
+                        .replace('\0', "\\0"),
+                )
+                .expect("warning text contains no NUL");
+                // A custom warning handler must not prevent this infallible fallback.
+                let _ = protect(|| {
+                    unsafe { rb_sys::rb_warn(c"%s".as_ptr(), message.as_ptr()) };
+                    ruby.qnil()
+                });
                 timestamp.into_value_with(ruby)
             }
         }

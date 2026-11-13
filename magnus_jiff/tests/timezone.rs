@@ -74,7 +74,11 @@ fn named_zone_arithmetic_and_fold_preserve_the_instant(ruby: &Ruby) -> Result<()
 
 fn timezone_callbacks_resolve_instants_and_dst(ruby: &Ruby) -> Result<(), Error> {
     let zone: Value = ruby.eval("MagnusTimezone.find_timezone('America/New_York')")?;
-    let local: Value = ruby.eval("Time.utc(2024, 3, 10, 3, 30)")?;
+    let local: Value = ruby.eval(
+        "Time.utc(2024, 3, 10, 3, 30).tap do |tm| \
+         def tm.to_i; raise 'timezone callbacks must use native Time data'; end; \
+         end",
+    )?;
     rb_assert!(
         ruby,
         "zone.local_to_utc(tm) == Time.utc(2024, 3, 10, 7, 30) && \
@@ -251,11 +255,25 @@ fn local_construction_rejects_gaps_and_folds(ruby: &Ruby) -> Result<(), Error> {
 }
 
 fn local_construction_rejects_out_of_range_instants(ruby: &Ruby) -> Result<(), Error> {
-    // A provisional civil timestamp or its resolved instant can fall
-    // outside Jiff's supported range even if the other is representable.
+    for (code, expected) in [
+        (
+            "Time.new(-9999, 1, 1, 12, 0, 0, in: MagnusTimezone.fixed(-72000))",
+            "-009999-01-02T08:00:00Z",
+        ),
+        (
+            "Time.new(9999, 12, 31, 12, 0, 0, in: MagnusTimezone.fixed(72000))",
+            "9999-12-30T16:00:00Z",
+        ),
+    ] {
+        let time: Value = ruby.eval(code)?;
+        assert_eq!(
+            Timestamp::try_convert(time)?,
+            expected.parse::<Timestamp>().unwrap()
+        );
+    }
     for code in [
-        "Time.new(-9999, 1, 1, 12, 0, 0, in: MagnusTimezone.fixed(-72000))",
         "Time.new(-9999, 1, 2, 2, 0, 0, in: MagnusTimezone.fixed(72000))",
+        "Time.new(9999, 12, 30, 22, 0, 0, in: MagnusTimezone.fixed(-72000))",
     ] {
         let err = ruby.eval::<Value>(code).unwrap_err();
         assert!(err.is_kind_of(ruby.exception_arg_error()), "{code}: {err}");

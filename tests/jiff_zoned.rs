@@ -127,6 +127,66 @@ fn direct_zoned_conversion_and_companion_subclass() {
                 .unwrap_err()
                 .is_kind_of(ruby.exception_range_error())
         );
+        fn warning_fixture() -> Zoned {
+            Zoned::new(
+                Timestamp::UNIX_EPOCH,
+                TimeZone::get("America/New_York").unwrap(),
+            )
+        }
+        ruby.define_global_function(
+            "jiff_warning_fixture",
+            magnus::function!(warning_fixture, 0),
+        )?;
+        rb_assert!(
+            ruby,
+            r#"
+            original_verbose = $VERBOSE
+            class << Warning
+              alias_method :original_jiff_warn, :warn
+              def warn(message, **)
+                ($jiff_warnings ||= []) << message
+              end
+            end
+            class Time
+              alias_method :original_jiff_getlocal, :getlocal
+              def getlocal(*)
+                raise "literal %s %n %d"
+              end
+            end
+            begin
+              [false, true].each do |verbose|
+                $VERBOSE = verbose
+                $jiff_warnings = []
+                time = jiff_warning_fixture
+                raise "lost instant" unless time.utc? && time.to_i == 0
+                raise "missing literal warning" unless $jiff_warnings.one? &&
+                  $jiff_warnings.first.include?("literal %s %n %d")
+              end
+              $VERBOSE = nil
+              $jiff_warnings = []
+              jiff_warning_fixture
+              raise "ignored suppression" unless $jiff_warnings.empty?
+              $VERBOSE = false
+              def Warning.warn(*, **)
+                raise "warning handler failure"
+              end
+              time = jiff_warning_fixture
+              raise "warning prevented fallback" unless time.utc? && time.to_i == 0
+              true
+            ensure
+              $VERBOSE = original_verbose
+              class Time
+                alias_method :getlocal, :original_jiff_getlocal
+                remove_method :original_jiff_getlocal
+              end
+              class << Warning
+                alias_method :warn, :original_jiff_warn
+                remove_method :original_jiff_warn
+              end
+              $jiff_warnings = nil
+            end
+        "#
+        );
         Ok(())
     })
     .unwrap();
