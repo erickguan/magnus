@@ -56,7 +56,8 @@ fn coverage() -> Vec<(String, bool)> {
         .collect()
 }
 
-fn initialize_probe(ruby: &Ruby) -> Result<(), Error> {
+#[magnus::init(name = "timezone_probe")]
+fn init(ruby: &Ruby) -> Result<(), Error> {
     #[cfg(feature = "gem")]
     jiff_magnus::init(ruby)?;
 
@@ -76,9 +77,4 @@ fn initialize_probe(ruby: &Ruby) -> Result<(), Error> {
         magnus::function!(|| env!("MAGNUS_TIMEZONE_TEST_JIFF"), 0),
     )?;
     Ok(())
-}
-
-#[magnus::init(name = "timezone_probe")]
-fn init(ruby: &Ruby) -> Result<(), Error> {
-    initialize_probe(ruby)
 }

@@ -36,7 +36,8 @@ static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
 ///   or replaced.
 /// - Initialization is already in progress when the result is cached.
 ///
-/// Ruby allocation and method errors propagate.
+/// Ruby allocation and method errors propagate. Errors while publishing the
+/// class and resolver trigger rollback of both definitions.
 #[cfg_attr(not(test), magnus::init(name = "jiff_magnus"))]
 pub fn init(ruby: &Ruby) -> Result<(), Error> {
     if let Some(existing) = INITIALIZATION.get() {
@@ -79,14 +80,23 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
     class.define_singleton_method("fixed", magnus::function!(fixed, 1))?;
     class.define_singleton_method("posix", magnus::function!(posix, 1))?;
     class.freeze();
-    object.const_set(CLASS_NAME, class)?;
-    if let Err(err) =
-        time.define_singleton_method("find_timezone", magnus::function!(find_timezone, 1))
-    {
-        object.funcall::<_, _, Value>("remove_const", (CLASS_NAME,))?;
-        return Err(err);
-    }
-    let resolver: Value = time.funcall("method", ("find_timezone",))?;
+    let resolver = (|| -> Result<Value, Error> {
+        object.const_set(CLASS_NAME, class)?;
+        time.define_singleton_method("find_timezone", magnus::function!(find_timezone, 1))?;
+        time.funcall("method", ("find_timezone",))
+    })();
+    let resolver = match resolver {
+        Ok(resolver) => resolver,
+        Err(error) => {
+            // Ruby hooks can raise after a definition has already been installed.
+            // Remove both definitions and preserve the original exception.
+            let _ = time.singleton_class().and_then(|singleton| {
+                singleton.funcall::<_, _, Value>("remove_method", ("find_timezone",))
+            });
+            let _ = object.funcall::<_, _, Value>("remove_const", (CLASS_NAME,));
+            return Err(error);
+        }
+    };
     // Keep the cached values alive even if Ruby removes their public references.
     ruby.gc_register_mark_object(class);
     ruby.gc_register_mark_object(resolver);

@@ -637,6 +637,7 @@ unsafe impl Send for JiffTimeZone {}
 
 #[cfg(feature = "jiff-zoned")]
 impl JiffTimeZone {
+    /// Creates timezone data retaining the supplied Jiff rules.
     pub fn new(zone: TimeZone) -> Self {
         let timezone_string = DateTimePrinter::new()
             .time_zone_to_string(&zone)
