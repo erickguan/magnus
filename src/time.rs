@@ -10,7 +10,7 @@
 //! With `jiff-zoned`, Magnus converts [`jiff::Zoned`] using [`JiffTimeZone`].
 //! Core conversions install no public constant or resolver; the `magnus_jiff`
 //! gem supplies those. Independent extensions exchange portable strings through
-//! `src/magnus_timezone.h`, so named zones use the receiver's database.
+//! `src/include/magnus_timezone.h`, so named zones use the receiver's database.
 //!
 //! [jiff-timestamp-range]: https://docs.rs/jiff/latest/jiff/struct.Timestamp.html#associatedconstant.MIN
 //!
@@ -552,15 +552,18 @@ const ABI_VERSION: u8 = 1;
 const UNREPRESENTABLE: &CStr = c"magnus:timezone:unrepresentable";
 
 #[cfg(feature = "jiff-zoned")]
+const UNKNOWN_TIMEZONE_NAME: &str = "unknown-timezone";
+
+#[cfg(feature = "jiff-zoned")]
 #[repr(C)]
 struct MagnusTimeZone {
     abi_version: u8,
     jiff_timezone: *const c_char,
 }
 
-/// Jiff rules backing Ruby's timezone protocol and direct [`jiff::Zoned`] conversions.
+/// Stores a Jiff [`TimeZone`] for Ruby `Time` timezone callbacks.
 ///
-/// Implements the native timezone ABI defined in `src/magnus_timezone.h`.
+/// Implements the native timezone ABI defined in `src/include/magnus_timezone.h`.
 #[cfg(feature = "jiff-zoned")]
 #[cfg_attr(docsrs, doc(cfg(feature = "jiff-zoned")))]
 #[repr(C)]
@@ -671,7 +674,7 @@ impl JiffTimeZone {
         } else if let Ok(offset) = self.zone.to_fixed_offset() {
             offset.to_string()
         } else {
-            "Jiff timezone".to_owned()
+            UNKNOWN_TIMEZONE_NAME.to_owned()
         }
     }
 

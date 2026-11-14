@@ -90,7 +90,7 @@ The gem owns public initialization. We do not replace another library's class
 or resolver. Independently linked extensions exchange timezone strings through
 the [public C header](magnus_timezone.h), rather than sharing Jiff's
 private Rust representation. Its source lives beside the core implementation
-at `src/magnus_timezone.h` in Magnus; packaging copies it to the gem root.
+at `src/include/magnus_timezone.h` in Magnus; packaging copies it to the gem root.
 Independent native extensions include it to read the portable representation.
 The C fixture in `tests/timezone_abi/fixtures/timezone_c.c` demonstrates both
 reading Rust-created objects and constructing compatible objects in C.

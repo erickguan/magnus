@@ -65,7 +65,7 @@ Dir.mktmpdir("magnus-timezone-interop-") do |directory|
   FileUtils.cp(File.join(fixtures, "timezone_c.c"), c_project)
   File.write(File.join(c_project, "extconf.rb"), <<~RUBY)
     require "mkmf"
-    $INCFLAGS << " -I" + Shellwords.escape(#{File.join(root, "src").dump})
+    $INCFLAGS << " -I" + Shellwords.escape(#{File.join(root, "src", "include").dump})
     create_makefile("timezone_c")
   RUBY
   [ [RbConfig.ruby, "extconf.rb"], [RbConfig::CONFIG.fetch("MAKE", "make")] ].each do |command|

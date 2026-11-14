@@ -358,7 +358,11 @@ fn named_zone_round_trips_with_seasonal_offsets_and_metadata(ruby: &Ruby) -> Res
 
 fn posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Result<(), Error> {
     let zone: Value = ruby.eval("MagnusTimezone.posix('EST5EDT,M3.2.0,M11.1.0')")?;
-    rb_assert!(ruby, "zone.frozen? && zone.to_s == 'Jiff timezone'", zone);
+    rb_assert!(
+        ruby,
+        "zone.frozen? && zone.to_s == 'unknown-timezone'",
+        zone
+    );
     rb_assert!(ruby, "zone.iana_name.nil?", zone);
     rb_assert!(ruby, "zone.name rescue TypeError", zone);
     let err = ruby

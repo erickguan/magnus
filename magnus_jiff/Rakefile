@@ -9,7 +9,7 @@ require "tmpdir"
 ROOT = File.expand_path(__dir__)
 SPEC = Gem::Specification.load(File.join(ROOT, "magnus_jiff.gemspec"))
 PACKAGE = File.join(ROOT, "pkg", "#{SPEC.full_name}.gem")
-PUBLIC_HEADER = File.expand_path("../src/magnus_timezone.h", ROOT)
+PUBLIC_HEADER = File.expand_path("../src/include/magnus_timezone.h", ROOT)
 PACKAGED_HEADER = File.join(ROOT, "magnus_timezone.h")
 NATIVE_LIBRARY = File.join(ROOT, "magnus_jiff.#{RbConfig::CONFIG.fetch('DLEXT')}")
 
