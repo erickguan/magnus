@@ -33,9 +33,8 @@ Dir.mktmpdir("magnus-timezone-install-") do |directory|
     abort "Standalone gem installation failed"
   end
 
-  installed = File.join(gem_home, "gems", "magnus_jiff-#{Gem::Package.new(source_gem).spec.version}")
+  installed = File.join(gem_home, "gems", "jiff-magnus-#{Gem::Package.new(source_gem).spec.version}")
   abort "Installed gem contains no native library" if Dir[File.join(installed, "lib", "**", "*.#{RbConfig::CONFIG.fetch('DLEXT')}")].empty?
-  abort "Installed gem contains no public timezone header" unless File.file?(File.join(installed, "magnus_timezone.h"))
   unless system(env, ruby, checks, chdir: directory)
     abort "Installed gem tests failed"
   end
@@ -43,16 +42,16 @@ Dir.mktmpdir("magnus-timezone-install-") do |directory|
   # Initialization conflicts must fail in fresh Ruby processes without replacing
   # the pre-existing class or resolver.
   conflicts = [
-    ["class MagnusTimezone; end; original = MagnusTimezone",
-     "MagnusTimezone.equal?(original) && !Time.respond_to?(:find_timezone, true)"],
+    ["class JiffTimezone; end; original = JiffTimezone",
+     "JiffTimezone.equal?(original) && !Time.respond_to?(:find_timezone, true)"],
     ["def Time.find_timezone(name); :foreign; end",
-     "Time.find_timezone('UTC') == :foreign && !Object.const_defined?(:MagnusTimezone, false)"]
+     "Time.find_timezone('UTC') == :foreign && !Object.const_defined?(:JiffTimezone, false)"]
   ]
   conflicts.each do |setup, preserved|
     code = <<~RUBY
       #{setup}
       begin
-        require "magnus_jiff"
+        require "jiff_magnus"
         abort "Expected LoadError"
       rescue LoadError => error
         abort error.full_message unless #{preserved}

@@ -62,6 +62,15 @@ static struct TestZone *get_zone(VALUE object) {
     return (struct TestZone *)RTYPEDDATA_DATA(object);
 }
 
+static VALUE unterminated(VALUE klass, VALUE delegate) {
+    VALUE object = wrap(klass, delegate, Qnil, INT2FIX(1));
+    struct TestZone *zone = get_zone(object);
+    zone->text = ALLOC_N(char, MAGNUS_TIMEZONE_MAX_BYTES);
+    memset(zone->text, 'A', MAGNUS_TIMEZONE_MAX_BYTES);
+    zone->header.jiff_timezone = zone->text;
+    return object;
+}
+
 static VALUE local_to_utc(VALUE self, VALUE tm) {
     return rb_funcall(get_zone(self)->delegate, rb_intern("local_to_utc"), 1, tm);
 }
@@ -93,7 +102,14 @@ static VALUE read_representation(VALUE klass, VALUE object) {
     }
     const struct MagnusTimeZone *zone = (const struct MagnusTimeZone *)pointer;
     if (!zone->jiff_timezone) rb_raise(rb_eTypeError, "NULL representation");
-    VALUE result = rb_utf8_str_new_cstr(zone->jiff_timezone);
+    size_t length = 0;
+    while (length < MAGNUS_TIMEZONE_MAX_BYTES && zone->jiff_timezone[length]) {
+        length++;
+    }
+    if (length == MAGNUS_TIMEZONE_MAX_BYTES) {
+        rb_raise(rb_eTypeError, "representation exceeds the byte limit or is not NUL-terminated");
+    }
+    VALUE result = rb_utf8_str_new(zone->jiff_timezone, (long)length);
     RB_GC_GUARD(object);
     return result;
 }
@@ -122,6 +138,8 @@ static VALUE short_version(VALUE klass) {
 void Init_timezone_c(void) {
     VALUE klass = rb_define_class("TimezoneC", rb_cObject);
     rb_undef_alloc_func(klass);
+    rb_define_const(klass, "MAX_BYTES", INT2NUM(MAGNUS_TIMEZONE_MAX_BYTES));
+    rb_define_singleton_method(klass, "unterminated", unterminated, 1);
     rb_define_singleton_method(klass, "wrap", wrap, 3);
     rb_define_singleton_method(klass, "legacy", legacy, 1);
     rb_define_singleton_method(klass, "read", read_representation, 1);

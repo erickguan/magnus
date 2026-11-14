@@ -8,9 +8,10 @@
 //! [Jiff's supported timestamp range][jiff-timestamp-range].
 //!
 //! With `jiff-zoned`, Magnus converts [`jiff::Zoned`] using [`JiffTimeZone`].
-//! Core conversions install no public constant or resolver; the `magnus_jiff`
-//! gem supplies those. Independent extensions exchange portable strings through
-//! `src/include/magnus_timezone.h`, so named zones use the receiver's database.
+//! Core conversions install no public constant or resolver because multiple extensions
+//! could use the same `jiff-zoned` feature with different jiff and magnus.
+//! A companion `jiff-magnus` gem provides a public class. Independent extensions can
+//! exchange portable strings through `src/include/magnus_timezone.h`.
 //!
 //! [jiff-timestamp-range]: https://docs.rs/jiff/latest/jiff/struct.Timestamp.html#associatedconstant.MIN
 //!
@@ -538,18 +539,24 @@ impl TryConvert for chrono::DateTime<chrono::FixedOffset> {
 #[cfg(feature = "jiff-zoned")]
 const RESOLVED_TIMESTAMP: &str = "@_magnus_jiff_resolved_ts";
 
-// This name excludes older payloads that lack the C header.
 #[cfg(feature = "jiff-zoned")]
-const DATA_TYPE_NAME: &CStr = c"magnus timezone";
-// Versions only the public C contract; private Jiff fields remain build-specific.
+const DATA_TYPE_NAME: &CStr = c"magnus-jiff-timezone";
+// The version of jiff-zoned ABI.
 #[cfg(feature = "jiff-zoned")]
 const ABI_VERSION: u8 = 1;
+
+// Arbitrary default
+#[cfg(feature = "jiff-zoned")]
+const MAX_TIMEZONE_BYTES: usize = 128;
 
 // Keep interchange string-only rather than retain TZif snapshots. Unnamed
 // TZif can fail to print; the original rules remain available to Ruby callbacks.
 // https://docs.rs/jiff/0.2.35/jiff/fmt/temporal/struct.DateTimePrinter.html#method.time_zone_to_string
 #[cfg(feature = "jiff-zoned")]
 const UNREPRESENTABLE: &CStr = c"magnus:timezone:unrepresentable";
+
+#[cfg(feature = "jiff-zoned")]
+const UNKNOWN_TIMEZONE_ID: &str = "Etc/Unknown";
 
 #[cfg(feature = "jiff-zoned")]
 const UNKNOWN_TIMEZONE_NAME: &str = "unknown-timezone";
@@ -561,9 +568,60 @@ struct MagnusTimeZone {
     jiff_timezone: *const c_char,
 }
 
-/// Stores a Jiff [`TimeZone`] for Ruby `Time` timezone callbacks.
+/// Stores a Jiff [`TimeZone`] for Ruby `Time` timezone methods.
 ///
-/// Implements the native timezone ABI defined in `src/include/magnus_timezone.h`.
+/// Ruby `Time` calls methods on a timezone object to resolve local times and
+/// calculate offsets, abbreviations, and DST. This backing type retains the
+/// original Jiff rules so those operations keep working across transitions;
+/// storing only the current UTC offset would lose that behavior.
+///
+/// Magnus attaches this object when converting a named, POSIX, or unknown
+/// [`jiff::Zoned`] timezone to Ruby. This remains a private class.
+/// The `jiff-magnus` companion gem can further installs a public `JiffTimezone` class,
+/// constructors, and `Time.find_timezone` resolver. As a user of `jiff-zoned`,
+/// you could either use `jiff-magnus` code or implement these features.
+///
+/// Native extensions can subclass the anonymous backing class to provide
+/// their own constructors:
+///
+/// ```
+/// use jiff::tz::TimeZone;
+/// use magnus::{Error, RClass, Ruby, TypedData, prelude::*, time::JiffTimeZone};
+///
+/// fn example(ruby: &Ruby) -> Result<(), Error> {
+///     let class = RClass::new(JiffTimeZone::class(ruby))?;
+///     ruby.class_object().const_set("JiffTimezone", class)?;
+///     let zone = ruby.obj_wrap_as(JiffTimeZone::new(TimeZone::UTC), class);
+///     zone.freeze();
+///     Ok(())
+/// }
+/// # Ruby::init(example).unwrap()
+/// ```
+///
+/// # Limitations
+///
+/// - Timezone objects can have different Ruby classes across Magnus builds.
+/// - Cross-build conversion transfers a string, not the original timezone rules.
+///
+/// Consider two gems, A and B, each built with Magnus's `jiff-zoned` feature.
+/// Gem A uses Magnus to create an unnamed Ruby timezone class. It defines
+/// `JiffTimezone` as a subclass of that class, inheriting its timezone methods.
+/// When A converts [`jiff::Zoned`] to Ruby [`Time`], Magnus checks this
+/// inheritance and reuses `JiffTimezone` so Rust- and Ruby-created zones have
+/// the same public class.
+///
+/// Gem B links a different Magnus copy, which creates a separate unnamed
+/// class. B uses that class because A's timezone methods cannot read B's Rust
+/// payload. A [`Time`] returned by B may therefore have a zone that is not a
+/// `JiffTimezone` instance, even after the companion loads. Existing objects
+/// keep their original class.
+///
+/// Independently built extensions read the C header and portable timezone
+/// string defined in `src/include/magnus_timezone.h`, never private Rust fields.
+/// IANA names resolve against the receiver's database, so rules can differ and
+/// custom named TZif rules transfer only their name. Unnamed TZif rules without
+/// a printable representation retain their local behavior but cannot cross
+/// builds; foreign conversion raises `TypeError`.
 #[cfg(feature = "jiff-zoned")]
 #[cfg_attr(docsrs, doc(cfg(feature = "jiff-zoned")))]
 #[repr(C)]
@@ -574,19 +632,16 @@ pub struct JiffTimeZone {
     timezone_string: CString,
 }
 
-// SAFETY: header.jiff_timezone points into the CString owned by this value.
-// Moving the value does not move that allocation. The bytes are immutable,
-// no foreign writer may modify them, and the pointer never outlives its owner.
 #[cfg(feature = "jiff-zoned")]
 unsafe impl Send for JiffTimeZone {}
 
 #[cfg(feature = "jiff-zoned")]
 impl JiffTimeZone {
-    /// Creates a backing object retaining the original Jiff rules.
     pub fn new(zone: TimeZone) -> Self {
         let timezone_string = DateTimePrinter::new()
             .time_zone_to_string(&zone)
             .ok()
+            .filter(|text| text.len() < MAX_TIMEZONE_BYTES)
             .and_then(|text| CString::new(text).ok())
             .unwrap_or_else(|| UNREPRESENTABLE.to_owned());
         Self {
@@ -600,7 +655,7 @@ impl JiffTimeZone {
     }
 
     fn local_to_utc(ruby: &Ruby, this: &Self, tm: Value) -> Result<Time, Error> {
-        let seconds = callback_timespec(ruby, tm)?.tv_sec as i64;
+        let seconds = time_argument_timespec(ruby, tm)?.tv_sec as i64;
         // Civil dates have a wider range than timestamps; validate the instant
         // only after applying the timezone's rules.
         let civil = jiff::civil::date(1970, 1, 1)
@@ -617,7 +672,7 @@ impl JiffTimeZone {
     }
 
     fn utc_to_local(ruby: &Ruby, this: &Self, tm: Value) -> Result<Time, Error> {
-        let timestamp = callback_timestamp(ruby, tm)?;
+        let timestamp = time_argument_timestamp(ruby, tm)?;
         let offset = this.zone.to_offset_info(timestamp).offset();
         let seconds = timestamp
             .as_second()
@@ -634,7 +689,7 @@ impl JiffTimeZone {
     }
 
     fn abbr(ruby: &Ruby, this: &Self, tm: Value) -> Result<String, Error> {
-        let timestamp = callback_timestamp(ruby, tm)?;
+        let timestamp = time_argument_timestamp(ruby, tm)?;
         Ok(this
             .zone
             .to_offset_info(timestamp)
@@ -643,12 +698,12 @@ impl JiffTimeZone {
     }
 
     fn is_dst(ruby: &Ruby, this: &Self, tm: Value) -> Result<bool, Error> {
-        let data = callback_data(ruby, tm)?;
+        let data = time_argument_data(ruby, tm)?;
         let seconds: Option<i64> = data.ivar_get(RESOLVED_TIMESTAMP)?;
         let timestamp = match seconds {
             Some(seconds) => Timestamp::from_second(seconds)
                 .map_err(|_| Error::new(ruby.exception_range_error(), "out of Time range"))?,
-            None => callback_timestamp(ruby, tm)?,
+            None => time_argument_timestamp(ruby, tm)?,
         };
         Ok(this.zone.to_offset_info(timestamp).dst().is_dst())
     }
@@ -670,7 +725,7 @@ impl JiffTimeZone {
         if let Some(name) = self.zone.iana_name() {
             name.to_owned()
         } else if self.zone.is_unknown() {
-            "Etc/Unknown".to_owned()
+            UNKNOWN_TIMEZONE_ID.to_owned()
         } else if let Ok(offset) = self.zone.to_fixed_offset() {
             offset.to_string()
         } else {
@@ -678,37 +733,68 @@ impl JiffTimeZone {
         }
     }
 
-    #[allow(unused_imports)] // Binding macros import both receiver variants.
-    fn configure(class: RClass) -> Result<(), Error> {
-        class.undef_default_alloc_func();
-        class.define_method(
-            "local_to_utc",
-            crate::method!(JiffTimeZone::local_to_utc, 1),
-        )?;
-        class.define_method(
-            "utc_to_local",
-            crate::method!(JiffTimeZone::utc_to_local, 1),
-        )?;
-        class.define_method("abbr", crate::method!(JiffTimeZone::abbr, 1))?;
-        class.define_method("dst?", crate::method!(JiffTimeZone::is_dst, 1))?;
-        class.define_method("name", crate::method!(JiffTimeZone::name, 0))?;
-        class.define_method("iana_name", crate::method!(JiffTimeZone::iana_name, 0))?;
-        class.define_method("to_s", crate::method!(JiffTimeZone::to_s, 0))?;
-        class.freeze();
-        Ok(())
+    fn inspect(this: Obj<Self>) -> Result<String, Error> {
+        let class: Option<String> = this.class().funcall("name", ())?;
+        let class = class.as_deref().unwrap_or("JiffTimezone (internal)");
+        let representation = if this.timezone_string.as_c_str() == UNREPRESENTABLE {
+            "unrepresentable".into()
+        } else {
+            this.timezone_string.to_string_lossy()
+        };
+        Ok(format!(
+            "#<{class} timezone={:?} representation={representation:?}>",
+            Self::to_s(&this)
+        ))
     }
 }
 
 #[cfg(feature = "jiff-zoned")]
 impl DataTypeFunctions for JiffTimeZone {}
 
+// Implement TypedData manually because the derive macro requires a named class,
+// while core conversions must work without jiff-magnus.
 #[cfg(feature = "jiff-zoned")]
 unsafe impl TypedData for JiffTimeZone {
+    /// Jiff timezone objects implement Ruby's timezone methods. If users need a
+    /// created object for a declared timezone class, users can reconstruct timezone
+    /// through the jiff-magnus's lookup and use `Time#getlocal` to preserve the instant.
+    #[allow(unused_imports)] // Binding macros import both receiver variants.
     fn class(ruby: &Ruby) -> RClass {
         static CLASS: Lazy<RClass> = Lazy::new(|ruby| {
             let class = RClass::new(ruby.class_object())
                 .expect("failed to create Jiff timezone backing class");
-            JiffTimeZone::configure(class).expect("failed to define Jiff timezone callbacks");
+            class.undef_default_alloc_func();
+            class
+                .define_method(
+                    "local_to_utc",
+                    crate::method!(JiffTimeZone::local_to_utc, 1),
+                )
+                .expect("failed to define Jiff timezone local_to_utc");
+            class
+                .define_method(
+                    "utc_to_local",
+                    crate::method!(JiffTimeZone::utc_to_local, 1),
+                )
+                .expect("failed to define Jiff timezone utc_to_local");
+            class
+                .define_method("abbr", crate::method!(JiffTimeZone::abbr, 1))
+                .expect("failed to define Jiff timezone abbr");
+            class
+                .define_method("dst?", crate::method!(JiffTimeZone::is_dst, 1))
+                .expect("failed to define Jiff timezone dst?");
+            class
+                .define_method("name", crate::method!(JiffTimeZone::name, 0))
+                .expect("failed to define Jiff timezone name");
+            class
+                .define_method("iana_name", crate::method!(JiffTimeZone::iana_name, 0))
+                .expect("failed to define Jiff timezone iana_name");
+            class
+                .define_method("to_s", crate::method!(JiffTimeZone::to_s, 0))
+                .expect("failed to define Jiff timezone to_s");
+            class
+                .define_method("inspect", crate::method!(JiffTimeZone::inspect, 0))
+                .expect("failed to define Jiff timezone inspect");
+            class.freeze();
             class
         });
         ruby.get_inner(&CLASS)
@@ -723,18 +809,18 @@ unsafe impl TypedData for JiffTimeZone {
 }
 
 #[cfg(feature = "jiff-zoned")]
-fn callback_data(ruby: &Ruby, tm: Value) -> Result<RTypedData, Error> {
+fn time_argument_data(ruby: &Ruby, tm: Value) -> Result<RTypedData, Error> {
     RTypedData::from_value(tm)
         .ok_or_else(|| Error::new(ruby.exception_type_error(), "expected a Time::tm or Time"))
 }
 
 #[cfg(feature = "jiff-zoned")]
 fn set_resolved_timestamp(ruby: &Ruby, tm: Value, timestamp: Timestamp) -> Result<(), Error> {
-    callback_data(ruby, tm)?.ivar_set(RESOLVED_TIMESTAMP, timestamp.as_second())
+    time_argument_data(ruby, tm)?.ivar_set(RESOLVED_TIMESTAMP, timestamp.as_second())
 }
 
 #[cfg(feature = "jiff-zoned")]
-fn callback_timespec(ruby: &Ruby, tm: Value) -> Result<rb_sys::timespec, Error> {
+fn time_argument_timespec(ruby: &Ruby, tm: Value) -> Result<rb_sys::timespec, Error> {
     // Time::tm is not a Time subclass, so read its shared native data type.
     let mut ts: rb_sys::timespec = unsafe { std::mem::zeroed() };
     protect(|| unsafe {
@@ -745,90 +831,11 @@ fn callback_timespec(ruby: &Ruby, tm: Value) -> Result<rb_sys::timespec, Error> 
 }
 
 #[cfg(feature = "jiff-zoned")]
-fn callback_timestamp(ruby: &Ruby, tm: Value) -> Result<Timestamp, Error> {
-    let ts = callback_timespec(ruby, tm)?;
+fn time_argument_timestamp(ruby: &Ruby, tm: Value) -> Result<Timestamp, Error> {
+    let ts = time_argument_timespec(ruby, tm)?;
     let out_of_range = || Error::new(ruby.exception_range_error(), "out of Time range");
     let nanoseconds = i32::try_from(ts.tv_nsec).map_err(|_| out_of_range())?;
     Timestamp::new(ts.tv_sec as _, nanoseconds).map_err(|_| out_of_range())
-}
-
-#[cfg(feature = "jiff-zoned")]
-fn portable_timezone(value: Value) -> Result<Option<TimeZone>, Error> {
-    let Some(data) = RTypedData::from_value(value) else {
-        return Ok(None);
-    };
-    let ruby = Ruby::get_with(value);
-    let invalid = |message: &str| Error::new(ruby.exception_type_error(), message.to_owned());
-
-    // SAFETY: Ruby owns the TypedData descriptor. A native extension using
-    // DATA_TYPE_NAME promises the public header layout, not Rust compatibility.
-    // Magnus never casts its private Jiff value or invokes its Rust drop glue.
-    let text = unsafe {
-        let descriptor = rb_sys::RTYPEDDATA_TYPE(data.as_rb_value());
-        let name = (*descriptor).wrap_struct_name;
-        if name.is_null() || CStr::from_ptr(name) != DATA_TYPE_NAME {
-            return Ok(None);
-        }
-        let pointer = rb_sys::RTYPEDDATA_GET_DATA(data.as_rb_value());
-        if pointer.is_null() {
-            return Err(invalid("uninitialized Magnus timezone"));
-        }
-        // Read only the first byte until the ABI version is validated.
-        let version = pointer.cast::<u8>().read();
-        if version != ABI_VERSION {
-            return Err(invalid("unsupported Magnus timezone ABI version"));
-        }
-        let header = &*pointer.cast::<MagnusTimeZone>();
-        if header.jiff_timezone.is_null() {
-            return Err(invalid("Magnus timezone representation must not be NULL"));
-        }
-        // No Ruby calls occur while copying the borrowed bytes. The source
-        // object is also referenced by the caller's Time throughout conversion.
-        CStr::from_ptr(header.jiff_timezone).to_bytes().to_owned()
-    };
-    if text == UNREPRESENTABLE.to_bytes() {
-        return Err(invalid(
-            "Magnus timezone rules cannot be transferred: no portable representation",
-        ));
-    }
-    let text = std::str::from_utf8(&text)
-        .map_err(|_| invalid("Magnus timezone representation is not UTF-8"))?;
-    DateTimeParser::new()
-        .parse_time_zone(text)
-        .map(Some)
-        .map_err(|err| {
-            invalid(&format!(
-                "could not reconstruct Magnus timezone from its portable representation: {err}"
-            ))
-        })
-}
-
-#[cfg(feature = "jiff-zoned")]
-fn from_time(time: Time) -> Result<TimeZone, Error> {
-    let ruby = Ruby::get_with(time);
-    let zone: Value = time.funcall("zone", ())?;
-    // Only descriptor identity permits native Rust access; the portable ABI does not.
-    if let Ok(zone) = Obj::<JiffTimeZone>::try_convert(zone) {
-        return Ok(zone.zone.clone());
-    }
-    if let Some(zone) = portable_timezone(zone)? {
-        return Ok(zone);
-    }
-    if time.funcall::<_, _, bool>("utc?", ())? {
-        return Ok(TimeZone::UTC);
-    }
-    if zone.is_nil() {
-        let seconds = i32::try_from(time.utc_offset()).map_err(|_| {
-            Error::new(ruby.exception_range_error(), "UTC offset out of Jiff range")
-        })?;
-        let offset = jiff::tz::Offset::from_seconds(seconds)
-            .map_err(|err| Error::new(ruby.exception_range_error(), err.to_string()))?;
-        return Ok(TimeZone::fixed(offset));
-    }
-    Err(Error::new(
-        ruby.exception_type_error(),
-        "Ruby Time timezone cannot be represented losslessly as a Jiff timezone",
-    ))
 }
 
 #[cfg(feature = "jiff-zoned")]
@@ -847,23 +854,36 @@ impl crate::IntoValue for jiff::Zoned {
     fn into_value_with(self, ruby: &Ruby) -> Value {
         let timestamp = self.timestamp();
         let zone = self.time_zone();
-        let result = if zone == &TimeZone::UTC {
-            time_from_timestamp(ruby, timestamp, Offset::utc())
-        } else if let Some(offset) = zone
-            .to_fixed_offset()
-            .ok()
-            .filter(|offset| zone == &TimeZone::fixed(*offset))
-        {
-            use crate::error::IntoError;
-            Offset::from_secs(offset.seconds())
-                .map_err(|err| err.into_error(ruby))
-                .and_then(|offset| time_from_timestamp(ruby, timestamp, offset))
-        } else {
-            let object = ruby.obj_wrap(JiffTimeZone::new(zone.clone()));
-            object.freeze();
-            time_from_timestamp(ruby, timestamp, Offset::utc())
-                .and_then(|time| time.funcall("getlocal", (object,)))
-        };
+        let result = (|| -> Result<Time, Error> {
+            if zone == &TimeZone::UTC {
+                time_from_timestamp(ruby, timestamp, Offset::utc())
+            } else if let Some(offset) = zone
+                .to_fixed_offset()
+                .ok()
+                .filter(|offset| zone == &TimeZone::fixed(*offset))
+            {
+                use crate::error::IntoError;
+                Offset::from_secs(offset.seconds())
+                    .map_err(|err| err.into_error(ruby))
+                    .and_then(|offset| time_from_timestamp(ruby, timestamp, offset))
+            } else {
+                let mut class = JiffTimeZone::class(ruby);
+                let object = ruby.class_object();
+                if object.funcall::<_, _, bool>("const_defined?", ("JiffTimezone", false))? {
+                    let candidate: Value = object.const_get("JiffTimezone")?;
+                    if let Some(candidate) = RClass::from_value(candidate) {
+                        // Inheritance from our class establishes native compatibility;
+                        // another build's public name or ABI version does not.
+                        if candidate.is_inherited(class) {
+                            class = candidate;
+                        }
+                    }
+                }
+                let object = ruby.obj_wrap_as(JiffTimeZone::new(zone.clone()), class);
+                object.freeze();
+                time_from_timestamp(ruby, timestamp, Offset::utc())?.funcall("getlocal", (object,))
+            }
+        })();
         match result {
             Ok(time) => time.as_value(),
             Err(err) => {
@@ -883,11 +903,93 @@ impl crate::IntoValue for jiff::Zoned {
     }
 }
 
+/// Unknown ABI versions, invalid strings, names the receiver cannot resolve,
+/// and representations exceeding 128 bytes including NUL raise `TypeError`.
+/// Oversized strings use the unrepresentable marker when creating an object.
 #[cfg(feature = "jiff-zoned")]
 impl TryConvert for jiff::Zoned {
     fn try_convert(value: Value) -> Result<Self, Error> {
         let time = Time::try_convert(value)?;
         let timestamp = Timestamp::try_convert(value)?;
-        Ok(Self::new(timestamp, from_time(time)?))
+        let ruby = Ruby::get_with(time);
+        let zone: Value = time.funcall("zone", ())?;
+        // Only descriptor identity permits native Rust access; the portable ABI does not.
+        let timezone = if let Ok(zone) = Obj::<JiffTimeZone>::try_convert(zone) {
+            Some(zone.zone.clone())
+        } else if let Some(data) = RTypedData::from_value(zone) {
+            let invalid =
+                |message: &str| Error::new(ruby.exception_type_error(), message.to_owned());
+            // SAFETY: Ruby owns the TypedData descriptor. A native extension using
+            // DATA_TYPE_NAME promises the public header layout, not Rust compatibility.
+            // Magnus never casts its private Jiff value or invokes its Rust drop glue.
+            let text = unsafe {
+                let descriptor = rb_sys::RTYPEDDATA_TYPE(data.as_rb_value());
+                let name = (*descriptor).wrap_struct_name;
+                if name.is_null() || CStr::from_ptr(name) != DATA_TYPE_NAME {
+                    None
+                } else {
+                    let pointer = rb_sys::RTYPEDDATA_GET_DATA(data.as_rb_value());
+                    if pointer.is_null() {
+                        return Err(invalid("uninitialized Magnus timezone"));
+                    }
+                    // Read only the first byte until the ABI version is validated.
+                    let version = pointer.cast::<u8>().read();
+                    if version != ABI_VERSION {
+                        return Err(invalid("unsupported Magnus timezone ABI version"));
+                    }
+                    let header = &*pointer.cast::<MagnusTimeZone>();
+                    if header.jiff_timezone.is_null() {
+                        return Err(invalid("Magnus timezone representation must not be NULL"));
+                    }
+                    let bytes = header.jiff_timezone.cast::<u8>();
+                    let mut length = 0;
+                    while length < MAX_TIMEZONE_BYTES && bytes.add(length).read() != 0 {
+                        length += 1;
+                    }
+                    if length == MAX_TIMEZONE_BYTES {
+                        return Err(invalid(
+                            "Magnus timezone representation exceeds the byte limit or is not NUL-terminated",
+                        ));
+                    }
+                    Some(std::slice::from_raw_parts(bytes, length).to_vec())
+                }
+            };
+            if let Some(text) = text {
+                if text == UNREPRESENTABLE.to_bytes() {
+                    return Err(invalid(
+                        "Magnus timezone rules cannot be transferred: no portable representation",
+                    ));
+                }
+                let text = std::str::from_utf8(&text)
+                    .map_err(|_| invalid("Magnus timezone representation is not UTF-8"))?;
+                Some(DateTimeParser::new().parse_time_zone(text).map_err(|err| {
+                    invalid(&format!(
+                        "could not reconstruct Magnus timezone from its portable representation: {err}"
+                    ))
+                })?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let timezone = if let Some(zone) = timezone {
+            zone
+        } else if time.funcall::<_, _, bool>("utc?", ())? {
+            TimeZone::UTC
+        } else if zone.is_nil() {
+            let seconds = i32::try_from(time.utc_offset()).map_err(|_| {
+                Error::new(ruby.exception_range_error(), "UTC offset out of Jiff range")
+            })?;
+            let offset = jiff::tz::Offset::from_seconds(seconds)
+                .map_err(|err| Error::new(ruby.exception_range_error(), err.to_string()))?;
+            TimeZone::fixed(offset)
+        } else {
+            return Err(Error::new(
+                ruby.exception_type_error(),
+                "Ruby Time timezone cannot be represented losslessly as a Jiff timezone",
+            ));
+        };
+        Ok(Self::new(timestamp, timezone))
     }
 }

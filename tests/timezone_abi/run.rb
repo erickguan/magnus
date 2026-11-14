@@ -28,13 +28,13 @@ Dir.mktmpdir("magnus-timezone-interop-") do |directory|
       name = "timezone_probe"
       crate-type = ["cdylib"]
       [features]
-      gem = ["dep:magnus_jiff"]
+      gem = ["dep:jiff-magnus"]
       [dependencies]
       magnus = { path = #{root.to_json}, default-features = false, features = ["jiff-zoned", "rb-sys"] }
       jiff = { version = "=#{version}", default-features = false, features = ["std", "tz-system", "tzdb-bundle-always"] }
       jiff-tzdb = "=0.1.9"
       rb-sys = { version = "0.9.124", default-features = false, features = ["stable-api-compiled-fallback"] }
-      magnus_jiff = { path = #{File.join(root, "magnus_jiff").to_json}, optional = true }
+      jiff-magnus = { path = #{File.join(root, "jiff_magnus").to_json}, optional = true }
     TOML
     File.write(File.join(project, "Cargo.toml"), manifest)
     command = ["cargo", "build", "--manifest-path", File.join(project, "Cargo.toml"), "--message-format", "json-render-diagnostics"]

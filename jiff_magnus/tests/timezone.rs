@@ -2,8 +2,8 @@ use jiff::{
     Timestamp, Zoned,
     tz::{Offset, TimeZone},
 };
+use jiff_magnus::init;
 use magnus::{Error, IntoValue, Ruby, Time, TryConvert, Value, prelude::*, rb_assert};
-use magnus_jiff::init;
 
 fn zoned(timestamp: Timestamp, zone: TimeZone) -> Zoned {
     jiff::Zoned::new(timestamp, zone)
@@ -73,7 +73,7 @@ fn named_zone_arithmetic_and_fold_preserve_the_instant(ruby: &Ruby) -> Result<()
 }
 
 fn timezone_callbacks_resolve_instants_and_dst(ruby: &Ruby) -> Result<(), Error> {
-    let zone: Value = ruby.eval("MagnusTimezone.find_timezone('America/New_York')")?;
+    let zone: Value = ruby.eval("JiffTimezone.find_timezone('America/New_York')")?;
     let local: Value = ruby.eval(
         "Time.utc(2024, 3, 10, 3, 30).tap do |tm| \
          def tm.to_i; raise 'timezone callbacks must use native Time data'; end; \
@@ -100,7 +100,7 @@ fn timezone_callbacks_resolve_instants_and_dst(ruby: &Ruby) -> Result<(), Error>
     );
     for month in [1, 7] {
         let result: Time = ruby.eval(&format!(
-            "MagnusTimezone.fixed(3600).local_to_utc(Time.utc(2024, {month}, 1, 12))"
+            "JiffTimezone.fixed(3600).local_to_utc(Time.utc(2024, {month}, 1, 12))"
         ))?;
         rb_assert!(
             ruby,
@@ -111,7 +111,7 @@ fn timezone_callbacks_resolve_instants_and_dst(ruby: &Ruby) -> Result<(), Error>
     }
     for month in [1, 7] {
         let result: Time = ruby.eval(&format!(
-            "MagnusTimezone.fixed(3600).utc_to_local(Time.utc(2024, {month}, 1, 11))"
+            "JiffTimezone.fixed(3600).utc_to_local(Time.utc(2024, {month}, 1, 11))"
         ))?;
         rb_assert!(
             ruby,
@@ -158,7 +158,7 @@ fn zoned_conversion_rejects_unrepresentable_ruby_times(ruby: &Ruby) -> Result<()
 }
 
 fn fixed_zones_use_native_ruby_offsets(ruby: &Ruby) -> Result<(), Error> {
-    let zone: Value = ruby.eval("MagnusTimezone.fixed(19800)")?;
+    let zone: Value = ruby.eval("JiffTimezone.fixed(19800)")?;
     // 1970-01-01 00:00:00 UTC
     let time: Value = magnus::eval!(ruby, "Time.at(0, in: zone)", zone)?;
     rb_assert!(
@@ -173,7 +173,7 @@ fn fixed_zones_use_native_ruby_offsets(ruby: &Ruby) -> Result<(), Error> {
     let err = zone.funcall::<_, _, String>("name", ()).unwrap_err();
     assert!(err.is_kind_of(ruby.exception_type_error()), "{err}");
     let err = ruby
-        .eval::<Value>("MagnusTimezone.fixed(100000)")
+        .eval::<Value>("JiffTimezone.fixed(100000)")
         .unwrap_err();
     assert!(err.is_kind_of(ruby.exception_arg_error()), "{err}");
 
@@ -212,7 +212,7 @@ fn fixed_zones_use_native_ruby_offsets(ruby: &Ruby) -> Result<(), Error> {
 }
 
 fn local_construction_resolves_civil_time(ruby: &Ruby) -> Result<(), Error> {
-    let zone: Value = ruby.eval("MagnusTimezone.find_timezone('America/New_York')")?;
+    let zone: Value = ruby.eval("JiffTimezone.find_timezone('America/New_York')")?;
     let local: Value = ruby.class_time().funcall(
         "new",
         (2024, 1, 11, 2, 30, 0, magnus::kwargs!(ruby, "in" => zone)),
@@ -257,11 +257,11 @@ fn local_construction_rejects_gaps_and_folds(ruby: &Ruby) -> Result<(), Error> {
 fn local_construction_rejects_out_of_range_instants(ruby: &Ruby) -> Result<(), Error> {
     for (code, expected) in [
         (
-            "Time.new(-9999, 1, 1, 12, 0, 0, in: MagnusTimezone.fixed(-72000))",
+            "Time.new(-9999, 1, 1, 12, 0, 0, in: JiffTimezone.fixed(-72000))",
             "-009999-01-02T08:00:00Z",
         ),
         (
-            "Time.new(9999, 12, 31, 12, 0, 0, in: MagnusTimezone.fixed(72000))",
+            "Time.new(9999, 12, 31, 12, 0, 0, in: JiffTimezone.fixed(72000))",
             "9999-12-30T16:00:00Z",
         ),
     ] {
@@ -272,14 +272,14 @@ fn local_construction_rejects_out_of_range_instants(ruby: &Ruby) -> Result<(), E
         );
     }
     for code in [
-        "Time.new(-9999, 1, 2, 2, 0, 0, in: MagnusTimezone.fixed(72000))",
-        "Time.new(9999, 12, 30, 22, 0, 0, in: MagnusTimezone.fixed(-72000))",
+        "Time.new(-9999, 1, 2, 2, 0, 0, in: JiffTimezone.fixed(72000))",
+        "Time.new(9999, 12, 30, 22, 0, 0, in: JiffTimezone.fixed(-72000))",
     ] {
         let err = ruby.eval::<Value>(code).unwrap_err();
         assert!(err.is_kind_of(ruby.exception_arg_error()), "{code}: {err}");
     }
     for year in [10000, -10000, 999999999] {
-        let code = format!("Time.new({year}, 1, 1, in: MagnusTimezone.utc)");
+        let code = format!("Time.new({year}, 1, 1, in: JiffTimezone.utc)");
         let err = ruby.eval::<Value>(&code).unwrap_err();
         assert!(err.is_kind_of(ruby.exception_arg_error()), "{code}: {err}");
     }
@@ -349,7 +349,8 @@ fn named_zone_round_trips_with_seasonal_offsets_and_metadata(ruby: &Ruby) -> Res
         ruby,
         "zone.frozen? && zone.name == 'America/New_York' && \
          zone.iana_name == 'America/New_York' && \
-         zone.to_s == 'America/New_York' && zone.class.name.nil?",
+         zone.to_s == 'America/New_York' && zone.instance_of?(JiffTimezone) && \
+         zone.inspect.include?('representation=\"America/New_York\"')",
         zone,
     );
     assert!(!zone.respond_to("to_str", false)?);
@@ -357,7 +358,7 @@ fn named_zone_round_trips_with_seasonal_offsets_and_metadata(ruby: &Ruby) -> Res
 }
 
 fn posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Result<(), Error> {
-    let zone: Value = ruby.eval("MagnusTimezone.posix('EST5EDT,M3.2.0,M11.1.0')")?;
+    let zone: Value = ruby.eval("JiffTimezone.posix('EST5EDT,M3.2.0,M11.1.0')")?;
     rb_assert!(
         ruby,
         "zone.frozen? && zone.to_s == 'unknown-timezone'",
@@ -366,13 +367,12 @@ fn posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Resul
     rb_assert!(ruby, "zone.iana_name.nil?", zone);
     rb_assert!(ruby, "zone.name rescue TypeError", zone);
     let err = ruby
-        .eval::<Value>("MagnusTimezone.posix('not a POSIX rule')")
+        .eval::<Value>("JiffTimezone.posix('not a POSIX rule')")
         .unwrap_err();
     assert!(err.is_kind_of(ruby.exception_arg_error()), "{err}");
 
-    let winter: Value = ruby.eval(
-        "Time.new(2024, 1, 1, 12, 0, 0, in: MagnusTimezone.posix('EST5EDT,M3.2.0,M11.1.0'))",
-    )?;
+    let winter: Value = ruby
+        .eval("Time.new(2024, 1, 1, 12, 0, 0, in: JiffTimezone.posix('EST5EDT,M3.2.0,M11.1.0'))")?;
     let summer: Value = ruby
         .class_time()
         .funcall("at", (1_720_493_204, magnus::kwargs!(ruby, "in" => zone)))?;
@@ -386,7 +386,7 @@ fn posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Resul
     let posix = TimeZone::posix("EST5EDT,M3.2.0,M11.1.0").unwrap();
     let from_ruby: Value = ruby.eval(
         "Time.new(2024, 7, 1, 12, 0, 0, \
-         in: MagnusTimezone.posix('EST5EDT,M3.2.0,M11.1.0'))",
+         in: JiffTimezone.posix('EST5EDT,M3.2.0,M11.1.0'))",
     )?;
     let converted = Zoned::try_convert(from_ruby)?;
     assert_eq!(
@@ -404,7 +404,7 @@ fn posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Resul
         assert_eq!(Zoned::try_convert(time)?, expected);
         rb_assert!(
             ruby,
-            "t.zone.class.name.nil? && t.utc_offset == offset && \
+            "t.zone.instance_of?(JiffTimezone) && t.utc_offset == offset && \
              t.strftime('%Z') == abbreviation && t.dst? == dst",
             t = time,
             offset,
@@ -417,8 +417,8 @@ fn posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Resul
 
 fn timezone_find_returns_named_zone_and_timestamp(ruby: &Ruby) -> Result<(), Error> {
     let time_class = ruby.class_time();
-    assert!(!ruby.eval::<bool>("MagnusTimezone.respond_to?(:get)")?);
-    let exposed: Value = ruby.eval("MagnusTimezone.find_timezone('America/New_York')")?;
+    assert!(!ruby.eval::<bool>("JiffTimezone.respond_to?(:get)")?);
+    let exposed: Value = ruby.eval("JiffTimezone.find_timezone('America/New_York')")?;
     rb_assert!(
         ruby,
         "zone.frozen? && zone.name == 'America/New_York' && \
@@ -445,7 +445,7 @@ fn timezone_find_returns_named_zone_and_timestamp(ruby: &Ruby) -> Result<(), Err
         Timestamp::try_convert(fractional)?,
         Timestamp::new(1_704_941_204, 123_456_789).unwrap()
     );
-    let err = ruby.eval::<Value>("MagnusTimezone.new").unwrap_err();
+    let err = ruby.eval::<Value>("JiffTimezone.new").unwrap_err();
     assert!(err.is_kind_of(ruby.exception_type_error()), "{err}");
     Ok(())
 }
@@ -453,7 +453,7 @@ fn timezone_find_returns_named_zone_and_timestamp(ruby: &Ruby) -> Result<(), Err
 fn resolver_parses_time_subclass(ruby: &Ruby) -> Result<(), Error> {
     ruby.eval::<Value>(
         "class TimeWithTimezone < Time; \
-         def self.find_timezone(z) = MagnusTimezone.find_timezone(z); end",
+         def self.find_timezone(z) = JiffTimezone.find_timezone(z); end",
     )?;
     let parsed: Value = ruby.eval("TimeWithTimezone.new('2023-12-25 America/New_York')")?;
     rb_assert!(
@@ -471,7 +471,7 @@ fn resolver_parses_time_subclass(ruby: &Ruby) -> Result<(), Error> {
 
 fn resolver_finds_named_zones_for_ruby_time(ruby: &Ruby) -> Result<(), Error> {
     let time_class = ruby.class_time();
-    let timezone_class: magnus::RClass = ruby.eval("MagnusTimezone")?;
+    let timezone_class: magnus::RClass = ruby.eval("JiffTimezone")?;
     let instant = 1_704_067_200; // 2024-01-01 00:00:00 UTC
     for (name, year, month, day, hour, offset) in [
         ("America/New_York", 2023, 12, 31, 19, -18_000),
@@ -482,7 +482,7 @@ fn resolver_finds_named_zones_for_ruby_time(ruby: &Ruby) -> Result<(), Error> {
         for zone in [on_time, on_timezone] {
             rb_assert!(
                 ruby,
-                "zone.instance_of?(MagnusTimezone) && zone.name == name",
+                "zone.instance_of?(JiffTimezone) && zone.name == name",
                 zone,
                 name
             );
@@ -528,7 +528,7 @@ fn resolver_finds_named_zones_for_ruby_time(ruby: &Ruby) -> Result<(), Error> {
         let from_name: Value = ruby.eval(&format!("Time.at({instant}, in: '{name}')"))?;
         rb_assert!(
             ruby,
-            "t.zone.instance_of?(MagnusTimezone) && t.zone.name == name && \
+            "t.zone.instance_of?(JiffTimezone) && t.zone.name == name && \
              t.to_i == instant && t.utc_offset == offset",
             t = from_name,
             name,
@@ -544,13 +544,13 @@ fn resolver_finds_named_zones_for_ruby_time(ruby: &Ruby) -> Result<(), Error> {
     rb_assert!(
         ruby,
         "Time.find_timezone('Not/A_Zone').nil? && \
-         MagnusTimezone.find_timezone('Not/A_Zone').nil?"
+         JiffTimezone.find_timezone('Not/A_Zone').nil?"
     );
     Ok(())
 }
 
 fn unknown_zone_remains_distinct_from_utc(ruby: &Ruby) -> Result<(), Error> {
-    let unknown: Value = ruby.eval("MagnusTimezone.unknown")?;
+    let unknown: Value = ruby.eval("JiffTimezone.unknown")?;
     rb_assert!(
         ruby,
         "unknown.frozen? && unknown.to_s == 'Etc/Unknown' && unknown.iana_name.nil? && \
@@ -574,7 +574,7 @@ fn unknown_zone_remains_distinct_from_utc(ruby: &Ruby) -> Result<(), Error> {
 }
 
 fn utc_zone_round_trips(ruby: &Ruby) -> Result<(), Error> {
-    let utc: Value = ruby.eval("MagnusTimezone.utc")?;
+    let utc: Value = ruby.eval("JiffTimezone.utc")?;
     rb_assert!(
         ruby,
         "utc.frozen? && utc.to_s == 'UTC' && utc.iana_name == 'UTC' && Time.at(0, in: utc).utc_offset == 0",
@@ -624,8 +624,8 @@ fn range_boundaries_and_negative_instants(ruby: &Ruby) -> Result<(), Error> {
 
 fn non_iana_marshal_is_explicitly_unsupported(ruby: &Ruby) -> Result<(), Error> {
     for expression in [
-        "MagnusTimezone.unknown",
-        "MagnusTimezone.posix('EST5EDT,M3.2.0,M11.1.0')",
+        "JiffTimezone.unknown",
+        "JiffTimezone.posix('EST5EDT,M3.2.0,M11.1.0')",
     ] {
         let code = format!("Marshal.dump(Time.at(0, in: {expression}))");
         let error = ruby.eval::<Value>(&code).unwrap_err();

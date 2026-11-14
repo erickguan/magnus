@@ -448,6 +448,9 @@ Enable `jiff-zoned` to accept and return `jiff::Zoned` directly. We preserve the
 instant, nanoseconds, and timezone rules through `magnus::time::JiffTimeZone`,
 the native backing type for Ruby's timezone protocol. We create its anonymous
 Ruby class lazily; we install no public class, resolver, or initialization hook.
+If `JiffTimezone` inherits from this build's backing class, outgoing conversions
+use that public class. Otherwise, they use the internal class. Another build's
+class name or ABI version never permits attaching our private Rust payload.
 
 Companion extensions can subclass `JiffTimeZone::class(ruby)` and use
 `ruby.obj_wrap_as(JiffTimeZone::new(zone), subclass)` to expose public timezone
@@ -464,7 +467,9 @@ Local civil times in gaps or folds raise `ArgumentError`; converting an explicit
 instant preserves either fold occurrence. If Ruby rejects an outgoing zone,
 we warn and return the same instant in UTC. Named-zone Marshal restoration
 requires an application-provided resolver. Core Magnus does not bundle an IANA
-database; callers choose their Jiff database source.
+database; callers choose their Jiff database source. See [Jiff timezones](docs/jiff-timezones.md)
+for the two native access paths, ABI contract, unsupported representations,
+and companion class selection.
 
 We do not automatically convert Jiff civil or duration types.
 
@@ -625,10 +630,10 @@ magnus = { git = "https://github.com/matsadler/magnus.git" }
 
 ## Crates that work with Magnus
 
-### magnus_jiff
+### jiff-magnus
 
-The workspace's [`magnus_jiff`](magnus_jiff/README.md) gem
-provides `MagnusTimezone`, bundled timezone data, and a native initializer that
+The workspace's [`jiff-magnus`](jiff_magnus/README.md) companion
+provides `JiffTimezone`, bundled timezone data, and a native initializer that
 runs when Ruby requires it. Its Ruby class extends Magnus's core
 `JiffTimeZone` backing type; Magnus provides direct `jiff::Zoned` conversion
 through the optional `jiff-zoned` feature.

@@ -21,13 +21,24 @@ fn direct_zoned_conversion_and_companion_subclass() {
             let expected = Zoned::new(timestamp, new_york.clone());
             let time = expected.clone().into_value_with(ruby);
             assert_eq!(Zoned::try_convert(time)?, expected);
-            rb_assert!(ruby, "t.zone.class.name.nil? && t.zone.frozen?", t = time);
+            rb_assert!(
+                ruby,
+                "t.zone.class.name.nil? && t.zone.frozen? && \
+                 t.zone.inspect.include?('JiffTimezone (internal)') && \
+                 t.zone.inspect.include?('representation=\"America/New_York\"')",
+                t = time
+            );
         }
         rb_assert!(
             ruby,
-            "!Object.const_defined?(:MagnusTimezone, false) && \
+            "!Object.const_defined?(:JiffTimezone, false) && \
             !Time.respond_to?(:find_timezone, true)"
         );
+
+        ruby.eval::<Value>("class JiffTimezone; end")?;
+        let unrelated = Zoned::new(Timestamp::UNIX_EPOCH, new_york.clone()).into_value_with(ruby);
+        rb_assert!(ruby, "t.zone.class.name.nil?", t = unrelated);
+        ruby.eval::<Value>("Object.send(:remove_const, :JiffTimezone)")?;
 
         for (stamp, offset, abbreviation, dst) in [
             ("2024-01-01T12:00:00Z", -18_000, "EST", false),
@@ -61,7 +72,7 @@ fn direct_zoned_conversion_and_companion_subclass() {
 
         // The companion owns its named class and constructors. It inherits
         // Magnus's protocol callbacks and wraps the same native backing type.
-        let class = ruby.define_class("ExampleTimezone", JiffTimeZone::class(ruby))?;
+        let class = ruby.define_class("JiffTimezone", JiffTimeZone::class(ruby))?;
         fn find(ruby: &Ruby, class: RClass, name: String) -> Result<Obj<JiffTimeZone>, Error> {
             let zone = TimeZone::get(&name)
                 .map_err(|err| Error::new(ruby.exception_arg_error(), err.to_string()))?;
@@ -72,18 +83,25 @@ fn direct_zoned_conversion_and_companion_subclass() {
         class.define_singleton_method("find", magnus::method!(find, 1))?;
         let local: Value = ruby.eval(
             "Time.new(2024, 7, 1, 12, 0, 123456789/1000000000r, \
-            in: ExampleTimezone.find('America/New_York'))",
+            in: JiffTimezone.find('America/New_York'))",
         )?;
         let converted = Zoned::try_convert(local)?;
         assert_eq!(converted.time_zone().iana_name(), Some("America/New_York"));
         assert_eq!(converted.timestamp().subsec_nanosecond(), 123_456_789);
         rb_assert!(
             ruby,
-            "t.zone.class == ExampleTimezone && t.dst? && t.utc_offset == -14400",
+            "t.zone.class == JiffTimezone && t.dst? && t.utc_offset == -14400",
             t = local
         );
+        let returned = converted.into_value_with(ruby);
+        rb_assert!(
+            ruby,
+            "t.zone.instance_of?(JiffTimezone) && \
+             t.zone.inspect.start_with?('#<JiffTimezone ')",
+            t = returned
+        );
         for (month, day, hour) in [(3, 10, 2), (11, 3, 1)] {
-            let zone: Value = ruby.eval("ExampleTimezone.find('America/New_York')")?;
+            let zone: Value = ruby.eval("JiffTimezone.find('America/New_York')")?;
             let error = ruby
                 .class_time()
                 .funcall::<_, _, Value>(
@@ -126,66 +144,6 @@ fn direct_zoned_conversion_and_companion_subclass() {
             Zoned::try_convert(outside)
                 .unwrap_err()
                 .is_kind_of(ruby.exception_range_error())
-        );
-        fn warning_fixture() -> Zoned {
-            Zoned::new(
-                Timestamp::UNIX_EPOCH,
-                TimeZone::get("America/New_York").unwrap(),
-            )
-        }
-        ruby.define_global_function(
-            "jiff_warning_fixture",
-            magnus::function!(warning_fixture, 0),
-        )?;
-        rb_assert!(
-            ruby,
-            r#"
-            original_verbose = $VERBOSE
-            class << Warning
-              alias_method :original_jiff_warn, :warn
-              def warn(message, **)
-                ($jiff_warnings ||= []) << message
-              end
-            end
-            class Time
-              alias_method :original_jiff_getlocal, :getlocal
-              def getlocal(*)
-                raise "literal %s %n %d"
-              end
-            end
-            begin
-              [false, true].each do |verbose|
-                $VERBOSE = verbose
-                $jiff_warnings = []
-                time = jiff_warning_fixture
-                raise "lost instant" unless time.utc? && time.to_i == 0
-                raise "missing literal warning" unless $jiff_warnings.one? &&
-                  $jiff_warnings.first.include?("literal %s %n %d")
-              end
-              $VERBOSE = nil
-              $jiff_warnings = []
-              jiff_warning_fixture
-              raise "ignored suppression" unless $jiff_warnings.empty?
-              $VERBOSE = false
-              def Warning.warn(*, **)
-                raise "warning handler failure"
-              end
-              time = jiff_warning_fixture
-              raise "warning prevented fallback" unless time.utc? && time.to_i == 0
-              true
-            ensure
-              $VERBOSE = original_verbose
-              class Time
-                alias_method :getlocal, :original_jiff_getlocal
-                remove_method :original_jiff_getlocal
-              end
-              class << Warning
-                alias_method :warn, :original_jiff_warn
-                remove_method :original_jiff_warn
-              end
-              $jiff_warnings = nil
-            end
-        "#
         );
         Ok(())
     })

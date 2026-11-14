@@ -1,9 +1,9 @@
 [package]
-name = "magnus_jiff"
-version = "0.1.0"
+name = "jiff-magnus"
+version = "0.0.1"
 edition = "2024"
 rust-version = "1.85"
-description = "Standalone Ruby gem and Rust conversions for Jiff timezone rules."
+description = "Jiff timezone constructors and bundled timezone data for Ruby Time."
 repository = "https://github.com/matsadler/magnus"
 license = "MIT"
 

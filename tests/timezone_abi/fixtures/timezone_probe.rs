@@ -25,6 +25,9 @@ fn make(ruby: &Ruby, name: String) -> Result<Zoned, Error> {
         "custom" => {
             TimeZone::tzif("America/New_York", jiff_tzdb::get("Asia/Tokyo").unwrap().1).unwrap()
         }
+        "custom_oversized" => {
+            TimeZone::tzif(&"A".repeat(128), jiff_tzdb::get("Asia/Tokyo").unwrap().1).unwrap()
+        }
         _ => TimeZone::get(&name)
             .map_err(|err| Error::new(ruby.exception_arg_error(), err.to_string()))?,
     };
@@ -55,7 +58,7 @@ fn coverage() -> Vec<(String, bool)> {
 
 fn initialize_probe(ruby: &Ruby) -> Result<(), Error> {
     #[cfg(feature = "gem")]
-    magnus_jiff::init(ruby)?;
+    jiff_magnus::init(ruby)?;
 
     let module = ruby.define_module(env!("MAGNUS_TIMEZONE_TEST_MODULE"))?;
     module.define_singleton_method("identity", magnus::function!(identity, 1))?;

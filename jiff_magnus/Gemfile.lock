@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    magnus_jiff (0.1.0)
+    jiff-magnus (0.0.1)
       rb_sys (~> 0.9.130)
 
 GEM
@@ -18,7 +18,7 @@ PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
-  magnus_jiff!
+  jiff-magnus!
   minitest (~> 5.0)
   rake (>= 13.0)
 

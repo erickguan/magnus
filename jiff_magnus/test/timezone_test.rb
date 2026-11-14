@@ -3,28 +3,30 @@
 require "minitest/autorun"
 require "open3"
 require "rbconfig"
-require "magnus_jiff"
+require "jiff_magnus"
 
 class TimezoneTest < Minitest::Test
   def test_require_initializes_once
-    assert_kind_of Class, MagnusTimezone
-    assert_nil MagnusTimezone.superclass.name
-    assert_equal MagnusTimezone.superclass, MagnusTimezone.instance_method(:utc_to_local).owner
+    assert_kind_of Class, JiffTimezone
+    assert_nil JiffTimezone.superclass.name
+    assert_equal JiffTimezone.superclass, JiffTimezone.instance_method(:utc_to_local).owner
     assert_respond_to Time, :find_timezone
-    refute require("magnus_jiff")
+    refute require("jiff_magnus")
     assert_equal "Asia/Tokyo", Time.find_timezone("Asia/Tokyo").name
   end
 
   def test_lookup_returns_frozen_objects
-    zone = MagnusTimezone.find_timezone("America/New_York")
-    assert_instance_of MagnusTimezone, zone
+    zone = JiffTimezone.find_timezone("America/New_York")
+    assert_instance_of JiffTimezone, zone
     assert_predicate zone, :frozen?
     assert_equal "America/New_York", zone.iana_name
     assert_equal "America/New_York", zone.to_s
-    assert_nil MagnusTimezone.find_timezone("Not/A_Zone")
+    assert_includes zone.inspect, '#<JiffTimezone '
+    assert_includes zone.inspect, 'representation="America/New_York"'
+    assert_nil JiffTimezone.find_timezone("Not/A_Zone")
     assert_nil Time.find_timezone("Not/A_Zone")
-    assert_raises(TypeError) { MagnusTimezone.new }
-    assert_raises(TypeError) { MagnusTimezone.allocate }
+    assert_raises(TypeError) { JiffTimezone.new }
+    assert_raises(TypeError) { JiffTimezone.allocate }
   end
 
   def test_named_zone_preserves_nanoseconds_and_observes_dst
@@ -41,8 +43,8 @@ class TimezoneTest < Minitest::Test
 
   def test_local_construction_preserves_fractional_seconds
     fraction = Rational(123_456_789, 1_000_000_000)
-    ["America/New_York", MagnusTimezone.fixed(19_800),
-     MagnusTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
+    ["America/New_York", JiffTimezone.fixed(19_800),
+     JiffTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
       time = Time.new(2024, 7, 1, 12, 0, fraction, in: zone)
       assert_equal 123_456_789, time.nsec
       assert_equal fraction, time.subsec
@@ -69,17 +71,17 @@ class TimezoneTest < Minitest::Test
   end
 
   def test_fixed_utc_posix_and_unknown_constructors
-    fixed = Time.at(0, in: MagnusTimezone.fixed(19_800))
+    fixed = Time.at(0, in: JiffTimezone.fixed(19_800))
     assert_equal 19_800, fixed.utc_offset
-    assert_equal 0, Time.at(0, in: MagnusTimezone.utc).utc_offset
-    unknown = Time.at(0, in: MagnusTimezone.unknown)
+    assert_equal 0, Time.at(0, in: JiffTimezone.utc).utc_offset
+    unknown = Time.at(0, in: JiffTimezone.unknown)
     assert_equal "Etc/Unknown", unknown.zone.to_s
     assert_equal 0, unknown.utc_offset
-    zone = MagnusTimezone.posix("EST5EDT,M3.2.0,M11.1.0")
+    zone = JiffTimezone.posix("EST5EDT,M3.2.0,M11.1.0")
     assert_equal(-18_000, Time.new(2024, 1, 1, in: zone).utc_offset)
     assert_equal(-14_400, Time.new(2024, 7, 1, in: zone).utc_offset)
-    assert_raises(ArgumentError) { MagnusTimezone.fixed(100_000) }
-    assert_raises(ArgumentError) { MagnusTimezone.posix("not a POSIX rule") }
+    assert_raises(ArgumentError) { JiffTimezone.fixed(100_000) }
+    assert_raises(ArgumentError) { JiffTimezone.posix("not a POSIX rule") }
   end
 
   def test_marshal_restores_named_and_native_fixed_zones
@@ -87,12 +89,12 @@ class TimezoneTest < Minitest::Test
     restored = Marshal.load(Marshal.dump(named))
     assert_equal named, restored
     assert_equal named.nsec, restored.nsec
-    assert_instance_of MagnusTimezone, restored.zone
+    assert_instance_of JiffTimezone, restored.zone
     assert_equal "America/New_York", restored.zone.name
     fixed = Time.at(0, in: "+05:30")
     assert_equal fixed.utc_offset, Marshal.load(Marshal.dump(fixed)).utc_offset
     code = <<~RUBY
-      require "magnus_jiff"
+      require "jiff_magnus"
       time = Marshal.load(STDIN.read)
       puts [time.zone.name, time.nsec, time.utc_offset].join(",")
     RUBY
@@ -102,7 +104,7 @@ class TimezoneTest < Minitest::Test
   end
 
   def test_non_iana_marshal_limits
-    [MagnusTimezone.unknown, MagnusTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
+    [JiffTimezone.unknown, JiffTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
       assert_raises(TypeError) { Marshal.dump(Time.at(0, in: zone)) }
     end
   end

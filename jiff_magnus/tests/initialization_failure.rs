@@ -1,5 +1,5 @@
+use jiff_magnus::init;
 use magnus::{Error, Ruby, rb_assert};
-use magnus_jiff::init;
 
 #[test]
 fn failed_resolver_installation_does_not_publish_the_class() {
@@ -9,7 +9,7 @@ fn failed_resolver_installation_does_not_publish_the_class() {
         assert!(error.is_kind_of(ruby.exception_frozen_error()), "{error}");
         rb_assert!(
             ruby,
-            "!Object.const_defined?(:MagnusTimezone, false) && \
+            "!Object.const_defined?(:JiffTimezone, false) && \
              !Time.respond_to?(:find_timezone, true)"
         );
         Ok(())

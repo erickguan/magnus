@@ -18,7 +18,7 @@ class InteroperabilityTest < Minitest::Test
     refute_equal TimezoneSource.descriptor_address, TimezonePeer.descriptor_address
     assert_equal "0.2.42", TimezoneSource.jiff_version
     assert_equal "0.2.35", TimezonePeer.jiff_version
-    time = Time.at(0, in: MagnusTimezone.find_timezone("America/New_York"))
+    time = Time.at(0, in: JiffTimezone.find_timezone("America/New_York"))
     assert TimezoneSource.owns(time)
     refute TimezonePeer.owns(time)
   end
@@ -28,12 +28,16 @@ class InteroperabilityTest < Minitest::Test
     peer = TimezonePeer.identity(time)
     assert TimezonePeer.owns(peer)
     refute TimezoneSource.owns(peer)
+    assert_nil peer.zone.class.name
+    assert_includes peer.zone.inspect, "JiffTimezone (internal)"
+    refute_instance_of JiffTimezone, peer.zone
     [peer, TimezoneSource.identity(peer)].each do |result|
       assert_equal time.to_r, result.to_r
       assert_equal time.utc_offset, result.utc_offset
       assert_equal "America/New_York", result.zone.iana_name
       assert_equal time.dst?, result.dst?
     end
+    assert_instance_of JiffTimezone, TimezoneSource.identity(peer).zone
   end
 
   def test_overlap_instants_and_negative_nanoseconds_cross_extensions
@@ -50,8 +54,8 @@ class InteroperabilityTest < Minitest::Test
   end
 
   def test_native_and_non_iana_forms_cross_extensions
-    [MagnusTimezone.utc, MagnusTimezone.fixed(19_800), MagnusTimezone.unknown,
-     MagnusTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
+    [JiffTimezone.utc, JiffTimezone.fixed(19_800), JiffTimezone.unknown,
+     JiffTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
       time = Time.at(1_720_440_000, 123_456_789, :nsec, in: zone)
       result = TimezonePeer.identity(time)
       assert_equal time.to_r, result.to_r
@@ -65,17 +69,17 @@ class InteroperabilityTest < Minitest::Test
   end
 
   def test_c_header_matches_actual_rust_allocations
-    assert_equal "America/New_York", TimezoneC.read(MagnusTimezone.find_timezone("America/New_York"))
-    assert_equal "Etc/Unknown", TimezoneC.read(MagnusTimezone.unknown)
-    assert_equal "+05:30", TimezoneC.read(MagnusTimezone.fixed(19_800))
+    assert_equal "America/New_York", TimezoneC.read(JiffTimezone.find_timezone("America/New_York"))
+    assert_equal "Etc/Unknown", TimezoneC.read(JiffTimezone.unknown)
+    assert_equal "+05:30", TimezoneC.read(JiffTimezone.fixed(19_800))
     assert_equal 0, TimezoneC.layout[1]
     assert_operator TimezoneC.layout[2], :>=, 1
-    refute_respond_to MagnusTimezone.unknown, :abi_version
-    refute_respond_to MagnusTimezone.unknown, :jiff_timezone
+    refute_respond_to JiffTimezone.unknown, :abi_version
+    refute_respond_to JiffTimezone.unknown, :jiff_timezone
   end
 
   def test_rust_reader_accepts_c_typed_data_without_rust_fields
-    delegate = MagnusTimezone.find_timezone("America/New_York")
+    delegate = JiffTimezone.find_timezone("America/New_York")
     zone = TimezoneC.wrap(delegate, "America/New_York", 1)
     original = Time.at(1_720_440_000, 987_654_321, :nsec, in: zone)
     [TimezoneSource, TimezonePeer].each do |extension|
@@ -87,7 +91,7 @@ class InteroperabilityTest < Minitest::Test
   end
 
   def test_header_and_string_survive_gc_compaction
-    zone = MagnusTimezone.find_timezone("America/New_York")
+    zone = JiffTimezone.find_timezone("America/New_York")
     time = Time.at(0, in: zone)
     3.times do
       GC.start
@@ -109,7 +113,7 @@ class InteroperabilityTest < Minitest::Test
   end
 
   def test_old_descriptor_does_not_claim_new_header_layout
-    zone = TimezoneC.legacy(MagnusTimezone.unknown)
+    zone = TimezoneC.legacy(JiffTimezone.unknown)
     error = assert_raises(TypeError) { TimezonePeer.identity(with_reported_zone(zone)) }
     assert_includes error.message, "cannot be represented"
   end
@@ -117,10 +121,38 @@ class InteroperabilityTest < Minitest::Test
   def test_invalid_portable_representations_report_errors
     [[MARKER, "cannot be transferred"], [nil, "must not be NULL"],
      ["\xFF".b, "not UTF-8"], ["Not/A_Zone", "could not reconstruct"]].each do |text, message|
-      zone = TimezoneC.wrap(MagnusTimezone.unknown, text, 1)
+      zone = TimezoneC.wrap(JiffTimezone.unknown, text, 1)
       error = assert_raises(TypeError) { TimezonePeer.identity(with_reported_zone(zone)) }
       assert_includes error.message, message
     end
+  end
+
+  def test_portable_representation_scan_is_bounded
+    delegate = JiffTimezone.unknown
+    oversized = TimezoneC.wrap(delegate, "A" * TimezoneC::MAX_BYTES, 1)
+    unterminated = TimezoneC.unterminated(delegate)
+    [oversized, unterminated].each do |zone|
+      error = assert_raises(TypeError) { TimezoneC.read(zone) }
+      assert_includes error.message, "byte limit"
+      [TimezoneSource, TimezonePeer].each do |extension|
+        error = assert_raises(TypeError) { extension.identity(with_reported_zone(zone)) }
+        assert_includes error.message, "byte limit"
+      end
+    end
+
+    zone = TimezoneC.wrap(delegate, "A" * (TimezoneC::MAX_BYTES - 1), 1)
+    assert_equal TimezoneC::MAX_BYTES - 1, TimezoneC.read(zone).bytesize
+    error = assert_raises(TypeError) { TimezonePeer.identity(with_reported_zone(zone)) }
+    assert_includes error.message, "could not reconstruct"
+  end
+
+  def test_oversized_native_representations_keep_local_rules
+    original = TimezoneSource.make("custom_oversized")
+    assert_equal MARKER, TimezoneC.read(original.zone)
+    assert_includes original.zone.inspect, 'representation="unrepresentable"'
+    assert_equal 32_400, TimezoneSource.identity(original).utc_offset
+    error = assert_raises(TypeError) { TimezonePeer.identity(original) }
+    assert_includes error.message, "cannot be transferred"
   end
 
   def test_foreign_ruby_objects_are_not_accepted_by_name
@@ -177,10 +209,12 @@ class InteroperabilityTest < Minitest::Test
           abort "Lost original winter rules" unless winter.utc_offset == -18000 && !winter.dst?
           abort "Local Rust access lost rules" unless TimezoneSource.identity(time).utc_offset == -14400
           if #{portable}
+            abort "Wrong representation in inspect" unless time.zone.inspect.include?('representation="America/New_York"')
             abort "Expected named timezone" unless text == "America/New_York"
             abort "Cross-extension transfer failed" unless TimezonePeer.identity(time).to_r == time.to_r
           else
             abort "Expected marker" unless text == #{MARKER.dump}
+            abort "Missing unrepresentable state" unless time.zone.inspect.include?('representation="unrepresentable"')
             begin
               TimezonePeer.identity(time)
               abort "Expected unsupported transfer"

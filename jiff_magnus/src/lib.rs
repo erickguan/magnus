@@ -1,8 +1,8 @@
-//! Standalone Jiff timezone constructors for Ruby `Time`.
+//! Ruby constructors for Jiff timezones, using Magnus's native backing type.
 //!
-//! `require "magnus_jiff"` calls [`init`] and bundles IANA timezone data.
-//! The gem subclasses Magnus's [`JiffTimeZone`] to reuse its callbacks while
-//! leaving core [`jiff::Zoned`] conversions independent of public Ruby names.
+//! `require "jiff_magnus"` calls [`init`] and bundles IANA timezone data.
+//! The gem subclasses Magnus's [`JiffTimeZone`] to reuse its timezone methods.
+//! Core [`jiff::Zoned`] conversions work before this gem is initialized.
 
 use std::sync::OnceLock;
 
@@ -12,7 +12,7 @@ use magnus::{
     typed_data::Obj, value::Opaque,
 };
 
-const CLASS_NAME: &str = "MagnusTimezone";
+const CLASS_NAME: &str = "JiffTimezone";
 
 struct Initialization {
     class: Opaque<RClass>,
@@ -21,7 +21,7 @@ struct Initialization {
 
 static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
 
-/// Initializes `MagnusTimezone` and `Time.find_timezone`.
+/// Initializes `JiffTimezone` and `Time.find_timezone`.
 ///
 /// Repeated calls succeed only while the original class and resolver remain
 /// installed, so initialization never replaces another extension's definitions.
@@ -30,23 +30,39 @@ static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
 ///
 /// We return Ruby `LoadError` in these cases:
 ///
-/// - Before the first initialization, `Object::MagnusTimezone` is already defined
+/// - Before the first initialization, `Object::JiffTimezone` is already defined
 ///   or `Time` already responds to `find_timezone`, including a private method.
-/// - After initialization, `MagnusTimezone` or `Time.find_timezone` was removed
+/// - After initialization, `JiffTimezone` or `Time.find_timezone` was removed
 ///   or replaced.
 /// - Initialization is already in progress when the result is cached.
 ///
 /// Ruby allocation and method errors propagate.
-#[cfg_attr(not(test), magnus::init(name = "magnus_jiff"))]
+#[cfg_attr(not(test), magnus::init(name = "jiff_magnus"))]
 pub fn init(ruby: &Ruby) -> Result<(), Error> {
     if let Some(existing) = INITIALIZATION.get() {
-        return existing.validate(ruby);
+        let object = ruby.class_object();
+        if !object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
+            return Err(conflict(ruby, "JiffTimezone initialization was removed"));
+        }
+        let class: Value = object.const_get(CLASS_NAME)?;
+        if class.as_raw() != ruby.get_inner(existing.class).as_raw() {
+            return Err(conflict(ruby, "JiffTimezone initialization was replaced"));
+        }
+        let time = ruby.class_time();
+        if !time.respond_to("find_timezone", true)? {
+            return Err(conflict(ruby, "Time.find_timezone was removed"));
+        }
+        let method: Value = time.funcall("method", ("find_timezone",))?;
+        if !method.funcall::<_, _, bool>("==", (ruby.get_inner(existing.resolver),))? {
+            return Err(conflict(ruby, "Time.find_timezone was replaced"));
+        }
+        return Ok(());
     }
     let object = ruby.class_object();
     if object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
         return Err(conflict(
             ruby,
-            "MagnusTimezone is already defined by another extension",
+            "JiffTimezone is already defined by another extension",
         ));
     }
     let time = ruby.class_time();
@@ -56,7 +72,13 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
 
     // Publish only after configuration succeeds to avoid a partial public class.
     let class = RClass::new(JiffTimeZone::class(ruby))?;
-    configure(class)?;
+    class.undef_default_alloc_func();
+    class.define_singleton_method("find_timezone", magnus::function!(find_timezone, 1))?;
+    class.define_singleton_method("utc", magnus::function!(utc, 0))?;
+    class.define_singleton_method("unknown", magnus::function!(unknown, 0))?;
+    class.define_singleton_method("fixed", magnus::function!(fixed, 1))?;
+    class.define_singleton_method("posix", magnus::function!(posix, 1))?;
+    class.freeze();
     object.const_set(CLASS_NAME, class)?;
     if let Err(err) =
         time.define_singleton_method("find_timezone", magnus::function!(find_timezone, 1))
@@ -77,41 +99,16 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-impl Initialization {
-    fn validate(&self, ruby: &Ruby) -> Result<(), Error> {
-        let object = ruby.class_object();
-        if !object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
-            return Err(conflict(ruby, "MagnusTimezone initialization was removed"));
-        }
-        let class: Value = object.const_get(CLASS_NAME)?;
-        if class.as_raw() != ruby.get_inner(self.class).as_raw() {
-            return Err(conflict(ruby, "MagnusTimezone initialization was replaced"));
-        }
-        let time = ruby.class_time();
-        if !time.respond_to("find_timezone", true)? {
-            return Err(conflict(ruby, "Time.find_timezone was removed"));
-        }
-        let method: Value = time.funcall("method", ("find_timezone",))?;
-        if !method.funcall::<_, _, bool>("==", (ruby.get_inner(self.resolver),))? {
-            return Err(conflict(ruby, "Time.find_timezone was replaced"));
-        }
-        Ok(())
-    }
-}
-
-fn class(ruby: &Ruby) -> Result<RClass, Error> {
-    INITIALIZATION
-        .get()
-        .map(|initialization| ruby.get_inner(initialization.class))
-        .ok_or_else(|| conflict(ruby, "call magnus_jiff::init before converting zones"))
-}
-
 fn conflict(ruby: &Ruby, message: &str) -> Error {
     Error::new(ruby.exception_load_error(), message.to_owned())
 }
 
 fn wrap(ruby: &Ruby, zone: TimeZone) -> Result<Obj<JiffTimeZone>, Error> {
-    let object = ruby.obj_wrap_as(JiffTimeZone::new(zone), class(ruby)?);
+    let class = INITIALIZATION
+        .get()
+        .map(|initialization| ruby.get_inner(initialization.class))
+        .ok_or_else(|| conflict(ruby, "call jiff_magnus::init before using constructors"))?;
+    let object = ruby.obj_wrap_as(JiffTimeZone::new(zone), class);
     object.freeze();
     Ok(object)
 }
@@ -141,15 +138,4 @@ fn posix(ruby: &Ruby, rule: String) -> Result<Obj<JiffTimeZone>, Error> {
     let zone = TimeZone::posix(&rule)
         .map_err(|err| Error::new(ruby.exception_arg_error(), err.to_string()))?;
     wrap(ruby, zone)
-}
-
-fn configure(class: RClass) -> Result<(), Error> {
-    class.undef_default_alloc_func();
-    class.define_singleton_method("find_timezone", magnus::function!(find_timezone, 1))?;
-    class.define_singleton_method("utc", magnus::function!(utc, 0))?;
-    class.define_singleton_method("unknown", magnus::function!(unknown, 0))?;
-    class.define_singleton_method("fixed", magnus::function!(fixed, 1))?;
-    class.define_singleton_method("posix", magnus::function!(posix, 1))?;
-    class.freeze();
-    Ok(())
 }

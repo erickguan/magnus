@@ -7,19 +7,12 @@ require "rubygems/package"
 require "tmpdir"
 
 ROOT = File.expand_path(__dir__)
-SPEC = Gem::Specification.load(File.join(ROOT, "magnus_jiff.gemspec"))
+SPEC = Gem::Specification.load(File.join(ROOT, "jiff-magnus.gemspec"))
 PACKAGE = File.join(ROOT, "pkg", "#{SPEC.full_name}.gem")
-PUBLIC_HEADER = File.expand_path("../src/include/magnus_timezone.h", ROOT)
-PACKAGED_HEADER = File.join(ROOT, "magnus_timezone.h")
-NATIVE_LIBRARY = File.join(ROOT, "magnus_jiff.#{RbConfig::CONFIG.fetch('DLEXT')}")
+NATIVE_LIBRARY = File.join(ROOT, "jiff_magnus.#{RbConfig::CONFIG.fetch('DLEXT')}")
 
-CLOBBER.include(File.join(ROOT, "pkg"), PACKAGED_HEADER,
+CLOBBER.include(File.join(ROOT, "pkg"),
                 NATIVE_LIBRARY, File.join(ROOT, "Makefile"), File.join(ROOT, "mkmf.log"))
-
-file PACKAGED_HEADER => PUBLIC_HEADER do
-  mkdir_p File.dirname(PACKAGED_HEADER)
-  cp PUBLIC_HEADER, PACKAGED_HEADER
-end
 
 desc "Build the native extension against the local Magnus checkout"
 task :compile do
@@ -32,16 +25,16 @@ end
 desc "Test the local native extension in Ruby"
 task test: :compile do
   Dir.mktmpdir("magnus-timezone-test-") do |library|
-    native = File.join(library, "magnus_jiff")
+    native = File.join(library, "jiff_magnus")
     FileUtils.mkdir_p(native)
-    FileUtils.cp(File.join(ROOT, "lib", "magnus_jiff.rb"), library)
+    FileUtils.cp(File.join(ROOT, "lib", "jiff_magnus.rb"), library)
     FileUtils.cp(NATIVE_LIBRARY, native)
     sh({"RUBYLIB" => library}, RbConfig.ruby, File.join(ROOT, "test", "timezone_test.rb"))
   end
 end
 
 desc "Build a source gem (installation requires a published Magnus version)"
-task build: PACKAGED_HEADER do
+task :build do
   FileUtils.mkdir_p(File.dirname(PACKAGE))
   Dir.mktmpdir("magnus-timezone-package-") do |stage|
     SPEC.files.each do |file|

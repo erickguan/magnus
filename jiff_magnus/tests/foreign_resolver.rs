@@ -1,5 +1,5 @@
+use jiff_magnus::init;
 use magnus::{Error, Ruby, Value, rb_assert};
-use magnus_jiff::init;
 
 #[test]
 fn foreign_resolver_is_preserved() {
@@ -10,7 +10,7 @@ fn foreign_resolver_is_preserved() {
         rb_assert!(
             ruby,
             "Time.find_timezone('UTC') == [:foreign, 'UTC'] && \
-            !Object.const_defined?(:MagnusTimezone, false)"
+            !Object.const_defined?(:JiffTimezone, false)"
         );
         ruby.eval::<Value>("class << Time; remove_method :find_timezone; end")?;
         init(ruby)?;

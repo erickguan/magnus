@@ -255,6 +255,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jiff-magnus"
+version = "0.0.1"
+dependencies = [
+ "jiff",
+ "magnus",
+ "rb-sys",
+]
+
+[[package]]
 name = "jiff-static"
 version = "0.2.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -333,15 +342,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "magnus_jiff"
-version = "0.1.0"
-dependencies = [
- "jiff",
- "magnus",
- "rb-sys",
 ]
 
 [[package]]
