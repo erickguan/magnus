@@ -95,10 +95,13 @@ class TimezoneTest < Minitest::Test
     assert_equal(fixed.utc_offset, Marshal.load(Marshal.dump(fixed)).utc_offset)
     code = <<~RUBY
       require "jiff_magnus"
-      time = Marshal.load(STDIN.read)
+      time = Marshal.load(STDIN.binmode.read)
       puts [time.zone.name, time.nsec, time.utc_offset].join(",")
     RUBY
-    output, status = Open3.capture2e(RbConfig.ruby, "-e", code, stdin_data: Marshal.dump(named))
+    # Marshal bytes must cross Windows pipes without newline conversion.
+    output, status = Open3.capture2e(
+      RbConfig.ruby, "-e", code, stdin_data: Marshal.dump(named), binmode: true
+    )
     assert(status.success?, output)
     assert_equal("America/New_York,123456789,-14400", output.strip)
   end
