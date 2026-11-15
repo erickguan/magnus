@@ -18,7 +18,7 @@ time.utc_offset     # => -14400
 time.dst?           # => true
 time.strftime("%Z") # => "EDT"
 
-# Requiring the gem installs Time.find_timezone unless a method already exists.
+# By default, requiring the gem installs Time.find_timezone if absent.
 Time.at(0, in: "Asia/Tokyo")
 
 JiffTimezone.utc
@@ -42,15 +42,28 @@ Time.at(Time.utc(2024, 11, 3, 6, 30).to_i, in: "America/New_York") # EST
 
 ## Initialization and Marshal
 
-Requiring the gem initializes `JiffTimezone` and `Time.find_timezone`.
-Repeated `require` calls reuse the loaded extension. If `JiffTimezone` already
-exists, initialization reuses it when it inherits from the same Magnus copy's
-timezone class and provides `find_timezone`, `utc`, `unknown`, `fixed`, and
-`posix`, and `register`. It preserves an existing `Time.find_timezone` method,
-including a private one, and installs one only when absent. Reused classes and
-methods are not replaced.
+Requiring the gem initializes `JiffTimezone`. By default, it also defines
+`Time.find_timezone` if absent. Existing lookup methods, including private ones,
+are preserved. Repeated `require` calls reuse the loaded extension. An existing
+`JiffTimezone` class is reused when it inherits from the same Magnus copy's
+timezone class; its public methods are neither checked nor replaced.
 
-To explicitly replace another library's name lookup with Jiff:
+To skip automatic `Time.find_timezone` registration, set
+`JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION` to `0` or `false` before requiring
+the gem. `false` is case-insensitive; other values and an unset variable enable
+automatic registration. This setting is read on the first initialization.
+Timezone constructors and Magnus conversions remain available.
+
+```ruby
+ENV["JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION"] = "0"
+require "jiff_magnus"
+
+zone = JiffTimezone.find_timezone("Asia/Tokyo")
+Time.at(0, in: zone)
+```
+
+To explicitly install or replace name lookup with Jiff, even with automatic
+registration disabled:
 
 ```ruby
 JiffTimezone.register
@@ -61,11 +74,11 @@ Rust callers can use `jiff_magnus::register(ruby)` for the same operation.
 Registration makes `Time.find_timezone` public. If replacement fails, the
 previous method and its visibility are restored.
 
-An unrelated class, a class from another Magnus build, or a class missing a
-public API method raises `LoadError`. An unrelated `TimeZone` constant does not
-conflict. Repeated native initialization raises `LoadError` if the cached class
-or method was removed or replaced unexpectedly. Explicit registration updates
-that cached method. A failed initialization removes only definitions it added.
+An unrelated class or a class from another Magnus build raises `LoadError`.
+An unrelated `TimeZone` constant does not conflict. Repeated native
+initialization raises `LoadError` if the cached class or a tracked lookup method
+was removed or replaced unexpectedly. Explicit registration updates that cached
+method. A failed initialization removes only definitions it added.
 
 Require the gem before loading marshalled named-zone times. Native fixed-offset
 times need no resolver. POSIX, unknown, and explicitly wrapped fixed-offset

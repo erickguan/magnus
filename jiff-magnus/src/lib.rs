@@ -13,6 +13,7 @@ use magnus::{
 };
 
 const CLASS_NAME: &str = "JiffTimezone";
+const AUTO_TIME_REGISTRATION_ENV: &str = "JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION";
 
 struct Initialization {
     class: Opaque<RClass>,
@@ -21,23 +22,24 @@ struct Initialization {
 
 static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
 
-/// Initializes `JiffTimezone` and `Time.find_timezone`.
+/// Initializes `JiffTimezone` with optional automatic `Time.find_timezone` lookup.
 ///
 /// An existing `JiffTimezone` is reused if it inherits from this Magnus copy's
-/// timezone class and provides the public API. If `Time.find_timezone` already
-/// exists, it is left unchanged, including private methods. Otherwise this
-/// function defines it so Ruby calls such as `Time.at(0, in: "Asia/Tokyo")` can
-/// resolve timezone names. Use [`register`] to explicitly replace an existing
-/// method. Repeated calls require the cached class and method to remain installed.
+/// timezone class; its public methods are left untouched. An existing
+/// `Time.find_timezone` is preserved, including private methods. Otherwise this
+/// function adds it unless `JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION` is `0`
+/// or `false` (case-insensitive), set before initialization. Constructors remain
+/// available without automatic lookup. Use [`register`] to explicitly install
+/// or replace the method regardless of this setting.
 ///
 /// # Errors
 ///
 /// We return Ruby `LoadError` in these cases:
 ///
 /// - An existing `Object::JiffTimezone` belongs to a different native
-///   implementation or lacks a public API method.
-/// - After initialization, `JiffTimezone` or `Time.find_timezone` was removed
-///   or replaced.
+///   implementation.
+/// - After initialization, `JiffTimezone` or a tracked `Time.find_timezone`
+///   method was removed or replaced.
 /// - Initialization is already in progress when the result is cached.
 ///
 /// Ruby allocation and method errors propagate. Errors while publishing the
@@ -53,18 +55,25 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
         if class.as_raw() != ruby.get_inner(existing.class).as_raw() {
             return Err(conflict(ruby, "JiffTimezone initialization was replaced"));
         }
-        let time = ruby.class_time();
-        if !time.respond_to("find_timezone", true)? {
-            return Err(conflict(ruby, "Time.find_timezone was removed"));
-        }
-        let method: Value = time.funcall("method", ("find_timezone",))?;
-        let expected: Value = ruby.get_inner(existing.resolver).entry(0)?;
-        if !method.funcall::<_, _, bool>("==", (expected,))? {
-            return Err(conflict(ruby, "Time.find_timezone was replaced"));
+        let expected: Option<Value> = ruby.get_inner(existing.resolver).entry(0)?;
+        if let Some(expected) = expected {
+            let time = ruby.class_time();
+            if !time.respond_to("find_timezone", true)? {
+                return Err(conflict(ruby, "Time.find_timezone was removed"));
+            }
+            let method: Value = time.funcall("method", ("find_timezone",))?;
+            if !method.funcall::<_, _, bool>("==", (expected,))? {
+                return Err(conflict(ruby, "Time.find_timezone was replaced"));
+            }
         }
         return Ok(());
     }
     let object = ruby.class_object();
+    let env: Value = object.const_get("ENV")?;
+    let setting: Option<String> = env.funcall("[]", (AUTO_TIME_REGISTRATION_ENV,))?;
+    let auto_register = !setting
+        .as_deref()
+        .is_some_and(|value| value == "0" || value.eq_ignore_ascii_case("false"));
     let existing_class = if object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
         let value: Value = object.const_get(CLASS_NAME)?;
         let class = RClass::from_value(value)
@@ -75,32 +84,19 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
                     "JiffTimezone is already defined by an incompatible native implementation",
                 )
             })?;
-        for method in [
-            "find_timezone",
-            "utc",
-            "unknown",
-            "fixed",
-            "posix",
-            "register",
-        ] {
-            if !class.respond_to(method, false)? {
-                return Err(conflict(
-                    ruby,
-                    &format!("existing JiffTimezone does not provide {method}"),
-                ));
-            }
-        }
         Some(class)
     } else {
         None
     };
     let time = ruby.class_time();
     let existing_resolver = time.respond_to("find_timezone", true)?;
+    let install_automatically = auto_register && !existing_resolver;
 
     // Configure a new class before publishing it; never modify a reused class.
     let class = if let Some(class) = existing_class {
         class
     } else {
+        // Reuse Magnus's TypedData instead of introducing a second native payload.
         let class = RClass::new(JiffTimeZone::class(ruby))?;
         class.undef_default_alloc_func();
         class.define_singleton_method("find_timezone", magnus::function!(find_timezone, 1))?;
@@ -116,7 +112,9 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
         if existing_class.is_none() {
             object.const_set(CLASS_NAME, class)?;
         }
-        if existing_resolver {
+        if !auto_register {
+            Ok(ruby.qnil().as_value())
+        } else if existing_resolver {
             time.funcall("method", ("find_timezone",))
         } else {
             install_resolver(ruby)
@@ -127,7 +125,7 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
         Err(error) => {
             // Ruby hooks can raise after a definition has already been installed.
             // Preserve reused definitions and the original exception.
-            if !existing_resolver {
+            if install_automatically {
                 let _ = time.singleton_class().and_then(|singleton| {
                     singleton.funcall::<_, _, Value>("remove_method", ("find_timezone",))
                 });
@@ -155,8 +153,9 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
 /// Replaces `Time.find_timezone` with this companion's Jiff name lookup.
 ///
 /// Unlike [`init`], this explicitly overrides an existing method, including a
-/// private one. Ruby callers use `JiffTimezone.register`. Calling this before
-/// initialization first initializes the companion.
+/// private one, regardless of `JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION`.
+/// Ruby callers use `JiffTimezone.register`. Calling this before initialization
+/// first initializes the companion.
 ///
 /// # Errors
 ///

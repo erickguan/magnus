@@ -103,6 +103,51 @@ class TimezoneTest < Minitest::Test
     assert_equal "America/New_York,123456789,-14400", output.strip
   end
 
+  def test_auto_time_registration_can_be_disabled
+    [nil, "1", "true", "0", "false", "FALSE"].each do |setting|
+      enabled = !["0", "false", "FALSE"].include?(setting)
+      code = <<~RUBY
+        require "jiff_magnus"
+        abort "Unexpected automatic lookup" unless Time.respond_to?(:find_timezone, true) == #{enabled}
+        zone = JiffTimezone.find_timezone("Asia/Tokyo")
+        abort "Explicit timezone failed" unless Time.at(0, in: zone).utc_offset == 32400
+        ENV["JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION"] = "1"
+        require "jiff_magnus"
+        abort "Repeated require changed lookup" unless Time.respond_to?(:find_timezone, true) == #{enabled}
+        ENV["JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION"] = #{setting.inspect}
+        JiffTimezone.register
+        abort "Explicit registration failed" unless Time.at(0, in: "Asia/Tokyo").utc_offset == 32400
+      RUBY
+      output, status = Open3.capture2e(
+        {"JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION" => setting},
+        RbConfig.ruby, "-e", code
+      )
+      assert status.success?, "setting=#{setting.inspect}: #{output}"
+    end
+  end
+
+  def test_auto_registration_optout_leaves_existing_lookup_untouched
+    ["0", "false"].each do |setting|
+      code = <<~RUBY
+        def Time.find_timezone(name)
+          [:existing, name]
+        end
+        original = Time.method(:find_timezone)
+        require "jiff_magnus"
+        abort "Existing lookup changed" unless Time.method(:find_timezone) == original
+        abort "Existing lookup failed" unless Time.find_timezone("UTC") == [:existing, "UTC"]
+        abort "Constructors unavailable" unless JiffTimezone.utc.iana_name == "UTC"
+        JiffTimezone.register
+        abort "Explicit replacement failed" unless Time.find_timezone("UTC").iana_name == "UTC"
+      RUBY
+      output, status = Open3.capture2e(
+        {"JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION" => setting},
+        RbConfig.ruby, "-e", code
+      )
+      assert status.success?, "setting=#{setting.inspect}: #{output}"
+    end
+  end
+
   def test_registration_explicitly_replaces_an_existing_lookup
     code = <<~RUBY
       def Time.find_timezone(name)

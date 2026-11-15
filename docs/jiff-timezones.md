@@ -23,11 +23,13 @@ created before the companion loads keep their existing class.
 
 The [jiff-magnus companion](../jiff-magnus/README.md) installs `JiffTimezone`,
 constructors, and `Time.find_timezone`. Its initializer can reuse an existing
-class from the same Magnus implementation if the public API is present.
-Loading preserves any existing `Time.find_timezone` method. Applications can
-call `JiffTimezone.register` to explicitly replace it with Jiff lookup; Rust
-callers use `jiff_magnus::register(ruby)`. The companion never puts local Rust
-data into another build's class.
+class that inherits from the same Magnus implementation's backing class. Its
+public methods are not inspected or replaced. Loading preserves any existing
+`Time.find_timezone` method. Set `JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION` to
+`0` or `false` before loading to prevent automatic registration. Applications
+can still call `JiffTimezone.register` to explicitly install or replace Jiff
+lookup; Rust callers use `jiff_magnus::register(ruby)`. The companion never puts
+local Rust data into another build's class.
 Another native extension can define its
 own subclass using `JiffTimeZone::class(ruby)` and wrap its zones with
 `ruby.obj_wrap_as(JiffTimeZone::new(zone), subclass)`. See the type's Rust API
