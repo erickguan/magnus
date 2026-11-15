@@ -22,7 +22,11 @@ Magnus never installs or replaces the public `JiffTimezone` constant. Objects
 created before the companion loads keep their existing class.
 
 The [jiff-magnus companion](../jiff_magnus/README.md) installs `JiffTimezone`,
-constructors, and `Time.find_timezone`. Another native extension can define its
+constructors, and `Time.find_timezone`. Its initializer can reuse an existing
+class from the same Magnus implementation if the public constructors are
+present. It preserves an existing resolver and installs one if missing; it
+never puts local Rust data into another build's class.
+Another native extension can define its
 own subclass using `JiffTimeZone::class(ruby)` and wrap its zones with
 `ruby.obj_wrap_as(JiffTimeZone::new(zone), subclass)`. See the type's Rust API
 example in [src/time.rs](../src/time.rs).

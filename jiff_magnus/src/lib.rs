@@ -23,21 +23,25 @@ static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
 
 /// Initializes `JiffTimezone` and `Time.find_timezone`.
 ///
-/// Repeated calls succeed only while the original class and resolver remain
-/// installed, so initialization never replaces another extension's definitions.
+/// An existing `JiffTimezone` is reused if it inherits from this Magnus copy's
+/// timezone class and provides the public constructors. Its existing
+/// `Time.find_timezone` resolver is preserved; a missing resolver is installed.
+/// Repeated calls require the cached class and resolver to remain installed.
 ///
 /// # Errors
 ///
 /// We return Ruby `LoadError` in these cases:
 ///
-/// - Before the first initialization, `Object::JiffTimezone` is already defined
-///   or `Time` already responds to `find_timezone`, including a private method.
+/// - An existing `Object::JiffTimezone` belongs to a different native
+///   implementation or lacks a public constructor.
+/// - `Time` already responds to `find_timezone`, including a private method,
+///   but no compatible `JiffTimezone` class exists.
 /// - After initialization, `JiffTimezone` or `Time.find_timezone` was removed
 ///   or replaced.
 /// - Initialization is already in progress when the result is cached.
 ///
 /// Ruby allocation and method errors propagate. Errors while publishing the
-/// class and resolver trigger rollback of both definitions.
+/// class and resolver roll back only definitions added by this call.
 #[cfg_attr(not(test), magnus::init(name = "jiff_magnus"))]
 pub fn init(ruby: &Ruby) -> Result<(), Error> {
     if let Some(existing) = INITIALIZATION.get() {
@@ -60,40 +64,70 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
         return Ok(());
     }
     let object = ruby.class_object();
-    if object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
-        return Err(conflict(
-            ruby,
-            "JiffTimezone is already defined by another extension",
-        ));
-    }
+    let existing_class = if object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
+        let value: Value = object.const_get(CLASS_NAME)?;
+        let class = RClass::from_value(value)
+            .filter(|class| class.is_inherited(JiffTimeZone::class(ruby)))
+            .ok_or_else(|| {
+                conflict(
+                    ruby,
+                    "JiffTimezone is already defined by an incompatible native implementation",
+                )
+            })?;
+        for method in ["find_timezone", "utc", "unknown", "fixed", "posix"] {
+            if !class.respond_to(method, false)? {
+                return Err(conflict(
+                    ruby,
+                    &format!("existing JiffTimezone does not provide {method}"),
+                ));
+            }
+        }
+        Some(class)
+    } else {
+        None
+    };
     let time = ruby.class_time();
-    if time.respond_to("find_timezone", true)? {
+    let existing_resolver = time.respond_to("find_timezone", true)?;
+    if existing_class.is_none() && existing_resolver {
         return Err(conflict(ruby, "Time.find_timezone is already defined"));
     }
 
-    // Publish only after configuration succeeds to avoid a partial public class.
-    let class = RClass::new(JiffTimeZone::class(ruby))?;
-    class.undef_default_alloc_func();
-    class.define_singleton_method("find_timezone", magnus::function!(find_timezone, 1))?;
-    class.define_singleton_method("utc", magnus::function!(utc, 0))?;
-    class.define_singleton_method("unknown", magnus::function!(unknown, 0))?;
-    class.define_singleton_method("fixed", magnus::function!(fixed, 1))?;
-    class.define_singleton_method("posix", magnus::function!(posix, 1))?;
-    class.freeze();
+    // Configure a new class before publishing it; never modify a reused class.
+    let class = if let Some(class) = existing_class {
+        class
+    } else {
+        let class = RClass::new(JiffTimeZone::class(ruby))?;
+        class.undef_default_alloc_func();
+        class.define_singleton_method("find_timezone", magnus::function!(find_timezone, 1))?;
+        class.define_singleton_method("utc", magnus::function!(utc, 0))?;
+        class.define_singleton_method("unknown", magnus::function!(unknown, 0))?;
+        class.define_singleton_method("fixed", magnus::function!(fixed, 1))?;
+        class.define_singleton_method("posix", magnus::function!(posix, 1))?;
+        class.freeze();
+        class
+    };
     let resolver = (|| -> Result<Value, Error> {
-        object.const_set(CLASS_NAME, class)?;
-        time.define_singleton_method("find_timezone", magnus::function!(find_timezone, 1))?;
+        if existing_class.is_none() {
+            object.const_set(CLASS_NAME, class)?;
+        }
+        if !existing_resolver {
+            time.define_singleton_method("find_timezone", magnus::function!(find_timezone, 1))?;
+        }
         time.funcall("method", ("find_timezone",))
     })();
     let resolver = match resolver {
         Ok(resolver) => resolver,
         Err(error) => {
             // Ruby hooks can raise after a definition has already been installed.
-            // Remove both definitions and preserve the original exception.
-            let _ = time.singleton_class().and_then(|singleton| {
-                singleton.funcall::<_, _, Value>("remove_method", ("find_timezone",))
-            });
-            let _ = object.funcall::<_, _, Value>("remove_const", (CLASS_NAME,));
+            // Preserve reused definitions and the original exception.
+            if !existing_resolver {
+                let _ = time.singleton_class().and_then(|singleton| {
+                    singleton.funcall::<_, _, Value>("remove_method", ("find_timezone",))
+                });
+            }
+            if existing_class.is_none() {
+                let _ = object.funcall::<_, _, Value>("remove_const", (CLASS_NAME,));
+            }
             return Err(error);
         }
     };

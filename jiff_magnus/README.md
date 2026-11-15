@@ -43,11 +43,18 @@ Time.at(Time.utc(2024, 11, 3, 6, 30).to_i, in: "America/New_York") # EST
 ## Initialization and Marshal
 
 Requiring the gem initializes `JiffTimezone` and `Time.find_timezone`.
-Repeated `require` calls reuse the loaded extension. Loading raises `LoadError`
-if that class or resolver already exists, including a private resolver method.
-An unrelated `TimeZone` constant does not conflict. Initialization leaves
-existing definitions intact. Repeated native initialization also raises
-`LoadError` if the original class or resolver was removed or replaced.
+Repeated `require` calls reuse the loaded extension. If `JiffTimezone` already
+exists, initialization reuses it when it inherits from the same Magnus copy's
+timezone class and provides `find_timezone`, `utc`, `unknown`, `fixed`, and
+`posix`. It preserves an existing `Time.find_timezone` resolver and installs one
+only when missing. Reused classes and methods are not replaced.
+
+An unrelated class, a class from another Magnus build, or a class missing a
+public constructor raises `LoadError`. If no compatible class exists, an
+existing resolver also raises `LoadError`, including a private resolver method.
+An unrelated `TimeZone` constant does not conflict. Repeated native
+initialization raises `LoadError` if the cached class or resolver was removed or
+replaced. A failed attempt removes only definitions it added.
 
 Require the gem before loading marshalled named-zone times. Native fixed-offset
 times need no resolver. POSIX, unknown, and explicitly wrapped fixed-offset

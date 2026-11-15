@@ -14,16 +14,21 @@ struct MagnusTimeZone {
     uint8_t abi_version;
 
     /*
-     * Non-NULL, immutable, NUL-terminated UTF-8 in Jiff's Temporal timezone
-     * format. The terminator must occur within MAGNUS_TIMEZONE_MAX_BYTES bytes;
-     * reject strings without a terminator in that range and scan no further.
-     * Providers must supply readable storage through the terminator; a byte
-     * limit does not validate an arbitrary native pointer.
+     * Requirements:
+     * - Non-NULL, immutable, NUL-terminated UTF-8 in Jiff's Temporal timezone
+     *   format.
+     * - The terminator must occur within MAGNUS_TIMEZONE_MAX_BYTES bytes.
+     *   Reject strings without a terminator in that range; scan no further.
+     * - Providers must supply readable storage through the terminator. The byte
+     *   limit does not validate an arbitrary native pointer.
      *
-     * The object owns the header and string. Both addresses remain stable for
-     * its lifetime. Keep the object alive while reading (RB_GC_GUARD where
-     * needed). Copy before retaining independently; never free these pointers
-     * or read beyond the header.
+     * The owning Ruby timezone object keeps the header and string alive at
+     * stable addresses. C readers must retain that object's VALUE in a local
+     * variable and call RB_GC_GUARD on it after the last pointer read. For
+     * example, use RB_GC_GUARD(timezone_object), where timezone_object is the
+     * VALUE whose TypedData contains this header. Copy the string into
+     * reader-owned storage if it must outlive that Ruby object. Never free the
+     * borrowed pointers or read beyond the header.
      *
      * Names resolve in the reader's database, so database differences and
      * custom named TZif can lose source rules. Unprintable or oversized

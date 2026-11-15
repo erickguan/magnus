@@ -17,7 +17,7 @@ The implementation findings below refer to this feature branch, not upstream.
 The user confirmed this boundary after the research:
 
 - Magnus owns conversions, the minimal anonymous timezone class and its methods, native data, and the portable ABI. Core conversions need no explicit initialization.
-- The companion crate and gem are `jiff-magnus`; its directory and Ruby require path use `jiff_magnus`. It owns `JiffTimezone`, constructors, lookup, bundled data, and ordinary extension initialization.
+- The companion crate and gem are `jiff-magnus`; its directory and Ruby require path use `jiff_magnus`. It owns `JiffTimezone`, constructors, lookup, bundled data, and ordinary extension initialization. Initialization dynamically reuses an existing same-build class with the public constructors, preserves its resolver, and installs a missing resolver. Other native builds' classes are rejected; failed initialization removes only newly added definitions.
 - Outgoing conversions may reuse `JiffTimezone` only when its inheritance establishes compatibility with this Magnus implementation's backing class. Otherwise they use the internal object. No additional factory or initialization handshake is needed.
 - Incoming objects use two paths: local TypedData identity permits native Rust access; foreign objects use the C ABI to reconstruct a local Jiff timezone or are rejected. Class names and matching Jiff versions do not establish Rust compatibility.
 - Class identity distinguishes public companion objects from internal ones. `inspect` reports the portable representation or an explicit unrepresentable state. Named-zone reconstruction can use different database rules; unnamed unrepresentable TZif cannot cross builds. Ractor sharing is outside this change.
