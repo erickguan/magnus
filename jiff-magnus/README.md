@@ -124,6 +124,37 @@ installed source gem from the repository root:
 ruby docs/examples/jiff_magnus_install.rb jiff-magnus/pkg/jiff-magnus-0.0.1.gem
 ```
 
+## Local releases
+
+Bundler's gem tasks provide `build`, `install`, and `release`, as in `ffi-icu`.
+The build task uses our staging step to remove checkout-only Cargo paths from
+the source gem. The version comes from `jiff-magnus/Cargo.toml`.
+
+After the required Magnus version is published, run from this directory on a
+clean Git branch with working push credentials:
+
+```sh
+gem signin
+bundle exec rake release
+```
+
+The release task runs Standard, the Ruby tests, and an installed-source-gem
+check. It then creates a `jiff-magnus-v<version>` tag, pushes the current branch
+and tag to `origin`, and publishes the gem using your local RubyGems credentials.
+The tag prefix keeps companion releases separate from Magnus releases. Use
+`bundle exec rake release:check` to run validation without tagging or publishing.
+
+Bundler's full release task expects an attached Git branch. From a Jujutsu
+checkout with detached Git HEAD, manage the bookmark and release tag separately,
+then publish the committed revision with:
+
+```sh
+bundle exec rake release:rubygem_push
+```
+
+This task runs the same validation and clean-working-copy check, then publishes
+without changing Git references. Local publishing needs no GitHub API-key secret.
+
 ## GitHub Actions
 
 The [lint workflow](../.github/workflows/jiff-magnus-lint.yml) checks Standard,
