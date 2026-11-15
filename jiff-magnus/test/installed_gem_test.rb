@@ -39,13 +39,10 @@ Dir.mktmpdir("magnus-timezone-install-") do |directory|
     abort "Installed gem tests failed"
   end
 
-  # Initialization conflicts must fail in fresh Ruby processes without replacing
-  # the pre-existing class or resolver.
+  # An incompatible class must fail without replacing its definitions.
   conflicts = [
     ["class JiffTimezone; end; original = JiffTimezone",
-     "JiffTimezone.equal?(original) && !Time.respond_to?(:find_timezone, true)"],
-    ["def Time.find_timezone(name); :foreign; end",
-     "Time.find_timezone('UTC') == :foreign && !Object.const_defined?(:JiffTimezone, false)"]
+     "JiffTimezone.equal?(original) && !Time.respond_to?(:find_timezone, true)"]
   ]
   conflicts.each do |setup, preserved|
     code = <<~RUBY

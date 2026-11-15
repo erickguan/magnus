@@ -632,7 +632,7 @@ magnus = { git = "https://github.com/matsadler/magnus.git" }
 
 ### jiff-magnus
 
-The workspace's [`jiff-magnus`](jiff_magnus/README.md) companion
+The workspace's [`jiff-magnus`](jiff-magnus/README.md) companion
 provides `JiffTimezone`, bundled timezone data, and a native initializer that
 runs when Ruby requires it. Its Ruby class extends Magnus's core
 `JiffTimeZone` backing type; Magnus provides direct `jiff::Zoned` conversion

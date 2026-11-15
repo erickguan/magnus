@@ -10,14 +10,14 @@ The implementation findings below refer to this feature branch, not upstream.
 - [CRuby's timezone implementation](https://github.com/ruby/ruby/blob/master/time.c), in `zone_timelocal`, `zone_localtime`, and `zone_set_dst`, calls methods on the timezone object using `rb_check_funcall`. A classless GC holder cannot supply that interface. An anonymous Ruby class can.
 - [The conversion implementation](../../src/time.rs) can create that anonymous class lazily without a public constant or initializer. [TypedData](../../src/typed_data.rs) does not require a publicly named class.
 - [The C header](../../src/include/magnus_timezone.h) exposes only a version and portable string. It never establishes compatibility of different builds' private Rust layouts. Native access requires the receiving implementation's own TypedData descriptor.
-- [The companion initializer](../../jiff_magnus/src/lib.rs) installs public constructors and a resolver. Its build-local cache does not establish ownership of another build's public installation.
+- [The companion initializer](../../jiff-magnus/src/lib.rs) installs public constructors and a resolver. Its build-local cache does not establish ownership of another build's public installation.
 
 ## Agreed design
 
 The user confirmed this boundary after the research:
 
 - Magnus owns conversions, the minimal anonymous timezone class and its methods, native data, and the portable ABI. Core conversions need no explicit initialization.
-- The companion crate and gem are `jiff-magnus`; its directory and Ruby require path use `jiff_magnus`. It owns `JiffTimezone`, constructors, lookup, bundled data, and ordinary extension initialization. Initialization dynamically reuses an existing same-build class with the public constructors, preserves its resolver, and installs a missing resolver. Other native builds' classes are rejected; failed initialization removes only newly added definitions.
+- The companion crate, gem, and package directory are `jiff-magnus`; its Rust import, Ruby require path, and native library use `jiff_magnus`. It owns `JiffTimezone`, constructors, lookup, bundled data, and ordinary extension initialization. Initialization dynamically reuses an existing same-build class with the public API, preserves existing name lookup even when it creates a new class, and installs `Time.find_timezone` when absent. `JiffTimezone.register` and Rust `jiff_magnus::register(ruby)` explicitly replace that method. Other native builds' classes are rejected; failed initialization removes only newly added definitions.
 - Outgoing conversions may reuse `JiffTimezone` only when its inheritance establishes compatibility with this Magnus implementation's backing class. Otherwise they use the internal object. No additional factory or initialization handshake is needed.
 - Incoming objects use two paths: local TypedData identity permits native Rust access; foreign objects use the C ABI to reconstruct a local Jiff timezone or are rejected. Class names and matching Jiff versions do not establish Rust compatibility.
 - Class identity distinguishes public companion objects from internal ones. `inspect` reports the portable representation or an explicit unrepresentable state. Named-zone reconstruction can use different database rules; unnamed unrepresentable TZif cannot cross builds. Ractor sharing is outside this change.

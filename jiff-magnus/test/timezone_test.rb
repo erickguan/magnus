@@ -103,6 +103,77 @@ class TimezoneTest < Minitest::Test
     assert_equal "America/New_York,123456789,-14400", output.strip
   end
 
+  def test_registration_explicitly_replaces_an_existing_lookup
+    code = <<~RUBY
+      def Time.find_timezone(name)
+        [:foreign, name]
+      end
+      Time.singleton_class.send(:private, :find_timezone)
+      require "jiff_magnus"
+      abort "Existing lookup was replaced" unless Time.send(:find_timezone, "UTC") == [:foreign, "UTC"]
+      abort "Constructors are unavailable" unless JiffTimezone.utc.iana_name == "UTC"
+      abort "Private lookup changed visibility" if Time.respond_to?(:find_timezone)
+
+      JiffTimezone.register
+      abort "Registration did not install public lookup" unless Time.respond_to?(:find_timezone)
+      abort "Registered lookup failed" unless Time.at(0, in: "Asia/Tokyo").utc_offset == 32400
+
+      def Time.find_timezone(name)
+        :replacement
+      end
+      JiffTimezone.register
+      JiffTimezone.register
+      abort "Repeated registration failed" unless Time.find_timezone("UTC").iana_name == "UTC"
+    RUBY
+    output, status = Open3.capture2e(RbConfig.ruby, "-e", code)
+    assert status.success?, output
+  end
+
+  def test_failed_registration_restores_the_existing_lookup
+    [
+      "def Time.find_timezone(name); :original; end; Time.singleton_class.send(:private, :find_timezone)",
+      "def Object.find_timezone(name); :original; end"
+    ].each do |setup|
+      code = <<~RUBY
+        #{setup}
+        require "jiff_magnus"
+        original = Time.method(:find_timezone)
+        was_private = Time.singleton_class.private_method_defined?(:find_timezone, false)
+        was_local = Time.singleton_class.method_defined?(:find_timezone, false) || was_private
+        def Time.singleton_method_added(name)
+          raise "registration hook failed" if name == :find_timezone
+        end
+        begin
+          JiffTimezone.register
+          abort "Expected registration to fail"
+        rescue RuntimeError => error
+          abort error.full_message unless error.message == "registration hook failed"
+        end
+        class << Time
+          remove_method :singleton_method_added
+        end
+        abort "Original lookup was lost" unless Time.method(:find_timezone) == original
+        abort "Visibility changed" unless Time.singleton_class.private_method_defined?(:find_timezone, false) == was_private
+        is_local = Time.singleton_class.method_defined?(:find_timezone, false) ||
+          Time.singleton_class.private_method_defined?(:find_timezone, false)
+        abort "Method ownership changed" unless is_local == was_local
+
+        JiffTimezone.register
+        abort "Retry failed" unless Time.find_timezone("UTC").iana_name == "UTC"
+        original = Time.method(:find_timezone)
+        Time.freeze
+        begin
+          JiffTimezone.register
+          abort "Expected frozen Time to reject registration"
+        rescue FrozenError
+        end
+        abort "Frozen lookup changed" unless Time.method(:find_timezone) == original
+      RUBY
+      output, status = Open3.capture2e(RbConfig.ruby, "-e", code)
+      assert status.success?, output
+    end
+  end
+
   def test_non_iana_marshal_limits
     [JiffTimezone.unknown, JiffTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
       assert_raises(TypeError) { Marshal.dump(Time.at(0, in: zone)) }

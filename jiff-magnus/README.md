@@ -18,7 +18,7 @@ time.utc_offset     # => -14400
 time.dst?           # => true
 time.strftime("%Z") # => "EDT"
 
-# Requiring the gem installs Time.find_timezone for string lookup.
+# Requiring the gem installs Time.find_timezone unless a method already exists.
 Time.at(0, in: "Asia/Tokyo")
 
 JiffTimezone.utc
@@ -46,15 +46,26 @@ Requiring the gem initializes `JiffTimezone` and `Time.find_timezone`.
 Repeated `require` calls reuse the loaded extension. If `JiffTimezone` already
 exists, initialization reuses it when it inherits from the same Magnus copy's
 timezone class and provides `find_timezone`, `utc`, `unknown`, `fixed`, and
-`posix`. It preserves an existing `Time.find_timezone` resolver and installs one
-only when missing. Reused classes and methods are not replaced.
+`posix`, and `register`. It preserves an existing `Time.find_timezone` method,
+including a private one, and installs one only when absent. Reused classes and
+methods are not replaced.
+
+To explicitly replace another library's name lookup with Jiff:
+
+```ruby
+JiffTimezone.register
+Time.at(0, in: "Asia/Tokyo")
+```
+
+Rust callers can use `jiff_magnus::register(ruby)` for the same operation.
+Registration makes `Time.find_timezone` public. If replacement fails, the
+previous method and its visibility are restored.
 
 An unrelated class, a class from another Magnus build, or a class missing a
-public constructor raises `LoadError`. If no compatible class exists, an
-existing resolver also raises `LoadError`, including a private resolver method.
-An unrelated `TimeZone` constant does not conflict. Repeated native
-initialization raises `LoadError` if the cached class or resolver was removed or
-replaced. A failed attempt removes only definitions it added.
+public API method raises `LoadError`. An unrelated `TimeZone` constant does not
+conflict. Repeated native initialization raises `LoadError` if the cached class
+or method was removed or replaced unexpectedly. Explicit registration updates
+that cached method. A failed initialization removes only definitions it added.
 
 Require the gem before loading marshalled named-zone times. Native fixed-offset
 times need no resolver. POSIX, unknown, and explicitly wrapped fixed-offset
