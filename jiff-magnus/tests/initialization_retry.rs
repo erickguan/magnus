@@ -4,6 +4,26 @@ use magnus::{Error, Ruby, Value, prelude::*, rb_assert};
 #[test]
 fn initialization_can_retry_after_ruby_hook_errors() {
     Ruby::init(|ruby| -> Result<(), Error> {
+        ruby.define_global_function("reinitialize_jiff", magnus::function!(init, 0))?;
+        for callback in ["reinitialize_jiff", "JiffTimezone.register"] {
+            ruby.eval::<Value>(&format!(
+                "Time.instance_variable_set(:@reentered, false); \
+                 def Time.singleton_method_added(name); \
+                 return unless name == :find_timezone && !@reentered; \
+                 @reentered = true; {callback}; \
+                 raise 'outer hook failed'; end"
+            ))?;
+            let error = init(ruby).unwrap_err();
+            assert!(error.is_kind_of(ruby.exception_load_error()), "{error}");
+            assert!(error.to_string().contains("already in progress"), "{error}");
+            ruby.eval::<Value>("class << Time; remove_method :singleton_method_added; end")?;
+            rb_assert!(
+                ruby,
+                "!Object.const_defined?(:JiffTimezone, false) && \
+                 !Time.respond_to?(:find_timezone, true)"
+            );
+        }
+
         for (setup, cleanup, message) in [
             (
                 "def Time.singleton_method_added(name); \

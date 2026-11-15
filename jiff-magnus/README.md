@@ -78,7 +78,11 @@ An unrelated class or a class from another Magnus build raises `LoadError`.
 An unrelated `TimeZone` constant does not conflict. Repeated native
 initialization raises `LoadError` if the cached class or a tracked lookup method
 was removed or replaced unexpectedly. Explicit registration updates that cached
-method. A failed initialization removes only definitions it added.
+method. Reentrant initialization or registration raises `LoadError`; the outer
+operation can roll back and be retried. A failed initialization removes only
+definitions it added, preserving application definitions created by Ruby hooks.
+Failed resolver replacement also preserves an explicitly disabled inherited
+lookup.
 
 Require the gem before loading marshalled named-zone times. Native fixed-offset
 times need no resolver. POSIX, unknown, and explicitly wrapped fixed-offset

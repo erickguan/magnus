@@ -219,6 +219,139 @@ class TimezoneTest < Minitest::Test
     end
   end
 
+  def test_reentrant_registration_is_rejected_and_can_retry
+    code = <<~RUBY
+      require "jiff_magnus"
+      original = Time.method(:find_timezone)
+      def Time.singleton_method_added(name)
+        return unless name == :find_timezone && !@reentered
+        @reentered = true
+        JiffTimezone.register
+      end
+      begin
+        JiffTimezone.register
+        abort "Expected reentrant registration to fail"
+      rescue LoadError => error
+        abort error.full_message unless error.message.include?("already in progress")
+      end
+      class << Time
+        remove_method :singleton_method_added
+      end
+      abort "Original lookup was lost" unless Time.method(:find_timezone) == original
+      JiffTimezone.register
+      abort "Retry failed" unless Time.find_timezone("UTC").iana_name == "UTC"
+    RUBY
+    output, status = Open3.capture2e(RbConfig.ruby, "-e", code)
+    assert status.success?, output
+  end
+
+  def test_initialization_preserves_lookup_added_by_class_hook
+    skip "Ruby has no const_added hook" unless Object.respond_to?(:const_added, true)
+
+    code = <<~RUBY
+      def Object.const_added(name)
+        return unless name == :JiffTimezone
+        def Time.find_timezone(name)
+          [:application, name]
+        end
+      end
+      require "jiff_magnus"
+      abort "Application lookup was replaced" unless Time.find_timezone("UTC") == [:application, "UTC"]
+      abort "Constructors are unavailable" unless JiffTimezone.utc.iana_name == "UTC"
+    RUBY
+    output, status = Open3.capture2e(RbConfig.ruby, "-e", code)
+    assert status.success?, output
+  end
+
+  def test_failed_initialization_preserves_replacement_class
+    skip "Ruby has no const_added hook" unless Object.respond_to?(:const_added, true)
+
+    code = <<~RUBY
+      ApplicationTimezone = Class.new
+      def Object.const_added(name)
+        return unless name == :JiffTimezone && !@replaced
+        @replaced = true
+        remove_const(:JiffTimezone)
+        const_set(:JiffTimezone, ApplicationTimezone)
+        raise "class hook failed"
+      end
+      begin
+        require "jiff_magnus"
+        abort "Expected initialization to fail"
+      rescue RuntimeError => error
+        abort error.full_message unless error.message == "class hook failed"
+      end
+      class << Object
+        remove_method :const_added
+      end
+      abort "Replacement class was lost" unless JiffTimezone.equal?(ApplicationTimezone)
+      abort "Unexpected lookup" if Time.respond_to?(:find_timezone, true)
+      Object.send(:remove_const, :JiffTimezone)
+      require "jiff_magnus"
+      abort "Retry failed" unless JiffTimezone.utc.iana_name == "UTC"
+    RUBY
+    output, status = Open3.capture2e(RbConfig.ruby, "-e", code)
+    assert status.success?, output
+  end
+
+  def test_failed_initialization_preserves_lookup_added_by_class_hook
+    skip "Ruby has no const_added hook" unless Object.respond_to?(:const_added, true)
+
+    code = <<~RUBY
+      def Object.const_added(name)
+        return unless name == :JiffTimezone
+        def Time.find_timezone(name)
+          [:application, name]
+        end
+        raise "class hook failed"
+      end
+      begin
+        require "jiff_magnus"
+        abort "Expected initialization to fail"
+      rescue RuntimeError => error
+        abort error.full_message unless error.message == "class hook failed"
+      end
+      class << Object
+        remove_method :const_added
+      end
+      abort "Failed class was published" if Object.const_defined?(:JiffTimezone, false)
+      abort "Application lookup was lost" unless Time.find_timezone("UTC") == [:application, "UTC"]
+      require "jiff_magnus"
+      abort "Retry replaced application lookup" unless Time.find_timezone("UTC") == [:application, "UTC"]
+      JiffTimezone.register
+      abort "Explicit registration failed" unless Time.find_timezone("UTC").iana_name == "UTC"
+    RUBY
+    output, status = Open3.capture2e(RbConfig.ruby, "-e", code)
+    assert status.success?, output
+  end
+
+  def test_failed_initialization_keeps_inherited_lookup_disabled
+    code = <<~RUBY
+      def Object.find_timezone(name)
+        :inherited
+      end
+      Time.singleton_class.send(:undef_method, :find_timezone)
+      def Time.singleton_method_added(name)
+        raise "resolver hook failed" if name == :find_timezone
+      end
+      begin
+        require "jiff_magnus"
+        abort "Expected initialization to fail"
+      rescue RuntimeError => error
+        abort error.full_message unless error.message == "resolver hook failed"
+      end
+      class << Time
+        remove_method :singleton_method_added
+      end
+      abort "Disabled inherited lookup became visible" if Time.respond_to?(:find_timezone, true)
+      abort "Failed class was published" if Object.const_defined?(:JiffTimezone, false)
+      require "jiff_magnus"
+      abort "Retry failed" unless Time.find_timezone("UTC").iana_name == "UTC"
+    RUBY
+    output, status = Open3.capture2e(RbConfig.ruby, "-e", code)
+    assert status.success?, output
+  end
+
   def test_non_iana_marshal_limits
     [JiffTimezone.unknown, JiffTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
       assert_raises(TypeError) { Marshal.dump(Time.at(0, in: zone)) }

@@ -4,7 +4,7 @@
 //! The gem subclasses Magnus's [`JiffTimeZone`] to reuse its timezone methods.
 //! Core [`jiff::Zoned`] conversions work before this gem is initialized.
 
-use std::sync::OnceLock;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use jiff::tz::TimeZone;
 use magnus::{
@@ -20,7 +20,33 @@ struct Initialization {
     resolver: Opaque<RArray>,
 }
 
+impl Initialization {
+    fn validate_class(&self, ruby: &Ruby) -> Result<(), Error> {
+        let object = ruby.class_object();
+        if !object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
+            return Err(conflict(ruby, "JiffTimezone initialization was removed"));
+        }
+        let class: Value = object.const_get(CLASS_NAME)?;
+        if class.as_raw() != ruby.get_inner(self.class).as_raw() {
+            return Err(conflict(ruby, "JiffTimezone initialization was replaced"));
+        }
+        Ok(())
+    }
+}
+
 static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
+
+// Ruby definition hooks can reenter either public entry point while it publishes
+// or restores definitions. Reject those calls before they can commit the cache.
+fn lock_initialization(ruby: &Ruby) -> Result<MutexGuard<'static, ()>, Error> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.try_lock().map_err(|_| {
+        conflict(
+            ruby,
+            "timezone initialization or registration is already in progress",
+        )
+    })
+}
 
 /// Initializes `JiffTimezone` with optional automatic `Time.find_timezone` lookup.
 ///
@@ -40,21 +66,15 @@ static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
 ///   implementation.
 /// - After initialization, `JiffTimezone` or a tracked `Time.find_timezone`
 ///   method was removed or replaced.
-/// - Initialization is already in progress when the result is cached.
+/// - Initialization or registration is already in progress.
 ///
 /// Ruby allocation and method errors propagate. Errors while publishing the
 /// class and resolver roll back only definitions added by this call.
 #[cfg_attr(not(test), magnus::init(name = "jiff_magnus"))]
 pub fn init(ruby: &Ruby) -> Result<(), Error> {
+    let _guard = lock_initialization(ruby)?;
     if let Some(existing) = INITIALIZATION.get() {
-        let object = ruby.class_object();
-        if !object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
-            return Err(conflict(ruby, "JiffTimezone initialization was removed"));
-        }
-        let class: Value = object.const_get(CLASS_NAME)?;
-        if class.as_raw() != ruby.get_inner(existing.class).as_raw() {
-            return Err(conflict(ruby, "JiffTimezone initialization was replaced"));
-        }
+        existing.validate_class(ruby)?;
         let expected: Option<Value> = ruby.get_inner(existing.resolver).entry(0)?;
         if let Some(expected) = expected {
             let time = ruby.class_time();
@@ -89,8 +109,6 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
         None
     };
     let time = ruby.class_time();
-    let existing_resolver = time.respond_to("find_timezone", true)?;
-    let install_automatically = auto_register && !existing_resolver;
 
     // Configure a new class before publishing it; never modify a reused class.
     let class = if let Some(class) = existing_class {
@@ -114,7 +132,7 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
         }
         if !auto_register {
             Ok(ruby.qnil().as_value())
-        } else if existing_resolver {
+        } else if time.respond_to("find_timezone", true)? {
             time.funcall("method", ("find_timezone",))
         } else {
             install_resolver(ruby)
@@ -123,15 +141,18 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
     let resolver = match resolver {
         Ok(resolver) => resolver,
         Err(error) => {
-            // Ruby hooks can raise after a definition has already been installed.
-            // Preserve reused definitions and the original exception.
-            if install_automatically {
-                let _ = time.singleton_class().and_then(|singleton| {
-                    singleton.funcall::<_, _, Value>("remove_method", ("find_timezone",))
-                });
-            }
+            // The resolver installer rolls back its own changes. A class hook
+            // may instead have installed application definitions before raising.
             if existing_class.is_none() {
-                let _ = object.funcall::<_, _, Value>("remove_const", (CLASS_NAME,));
+                let _ = (|| -> Result<(), Error> {
+                    if object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
+                        let current: Value = object.const_get(CLASS_NAME)?;
+                        if current.as_raw() == class.as_raw() {
+                            object.funcall::<_, _, Value>("remove_const", (CLASS_NAME,))?;
+                        }
+                    }
+                    Ok(())
+                })();
             }
             return Err(error);
         }
@@ -159,21 +180,16 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
 ///
 /// # Errors
 ///
-/// Returns `LoadError` if the initialized class was removed or replaced.
+/// Returns `LoadError` if the initialized class was removed or replaced, or if
+/// initialization or registration is already in progress.
 /// Ruby errors propagate; a failed replacement restores the previous method.
 pub fn register(ruby: &Ruby) -> Result<(), Error> {
     if INITIALIZATION.get().is_none() {
         init(ruby)?;
     }
+    let _guard = lock_initialization(ruby)?;
     let initialization = INITIALIZATION.get().expect("companion was initialized");
-    let object = ruby.class_object();
-    if !object.funcall::<_, _, bool>("const_defined?", (CLASS_NAME, false))? {
-        return Err(conflict(ruby, "JiffTimezone initialization was removed"));
-    }
-    let class: Value = object.const_get(CLASS_NAME)?;
-    if class.as_raw() != ruby.get_inner(initialization.class).as_raw() {
-        return Err(conflict(ruby, "JiffTimezone initialization was replaced"));
-    }
+    initialization.validate_class(ruby)?;
     let method = install_resolver(ruby)?;
     ruby.get_inner(initialization.resolver).store(0, method)
 }
@@ -203,6 +219,10 @@ fn install_resolver(ruby: &Ruby) -> Result<Value, Error> {
     })();
     if result.is_err() {
         let _ = singleton.funcall::<_, _, Value>("remove_method", ("find_timezone",));
+        // Removing a replacement can expose an ancestor hidden by undef_method.
+        if previous.is_none() && time.respond_to("find_timezone", true).unwrap_or(false) {
+            let _ = singleton.funcall::<_, _, Value>("undef_method", ("find_timezone",));
+        }
         if let (Some(method), Some(access)) = (previous, visibility) {
             // A method-added hook can raise after the old body is restored.
             let _ = singleton.funcall::<_, _, Value>("define_method", ("find_timezone", method));
