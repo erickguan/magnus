@@ -7,7 +7,7 @@ require "rubygems/package"
 require "tmpdir"
 
 package = File.expand_path(ARGV.fetch(0))
-checks = File.expand_path("timezone_test.rb", __dir__)
+checks = File.expand_path("../../jiff-magnus/test/timezone_test.rb", __dir__)
 ruby = RbConfig.ruby
 
 Dir.mktmpdir("magnus-timezone-install-") do |directory|

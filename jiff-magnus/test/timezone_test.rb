@@ -21,7 +21,7 @@ class TimezoneTest < Minitest::Test
     assert_predicate zone, :frozen?
     assert_equal "America/New_York", zone.iana_name
     assert_equal "America/New_York", zone.to_s
-    assert_includes zone.inspect, '#<JiffTimezone '
+    assert_includes zone.inspect, "#<JiffTimezone "
     assert_includes zone.inspect, 'representation="America/New_York"'
     assert_nil JiffTimezone.find_timezone("Not/A_Zone")
     assert_nil Time.find_timezone("Not/A_Zone")
@@ -44,7 +44,7 @@ class TimezoneTest < Minitest::Test
   def test_local_construction_preserves_fractional_seconds
     fraction = Rational(123_456_789, 1_000_000_000)
     ["America/New_York", JiffTimezone.fixed(19_800),
-     JiffTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
+      JiffTimezone.posix("EST5EDT,M3.2.0,M11.1.0")].each do |zone|
       time = Time.new(2024, 7, 1, 12, 0, fraction, in: zone)
       assert_equal 123_456_789, time.nsec
       assert_equal fraction, time.subsec

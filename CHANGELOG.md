@@ -10,6 +10,10 @@
 - Direct `jiff::Zoned` conversion and a reusable `time::JiffTimeZone` backing
   type with the `jiff-zoned` feature. Public timezone registration remains
   the responsibility of companion extensions.
+- The `jiff-magnus` companion gem provides `JiffTimezone` constructors, bundled
+  IANA timezone data, and Ruby `Time` name lookup. Applications can disable
+  automatic lookup registration or explicitly install it with
+  `JiffTimezone.register`.
 
 ### Changed
 - New `block`, `debug`, `fiber`, `mutex`, `numeric`, `process`, `range`,

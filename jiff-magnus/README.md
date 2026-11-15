@@ -101,12 +101,23 @@ From this directory, run:
 
 ```sh
 bundle install
-bundle exec rake test
+bundle exec rake
 bundle exec rake build
 ```
 
 The checkout builds against the current Magnus source through `path = ".."`.
-The test task builds the native extension and exercises `require`, timezone
-behavior, and Marshal across processes. The build task creates the source gem
-under `pkg/`; distributed source gems resolve their declared Magnus dependency
-from crates.io. The workspace uses its root Cargo lockfile.
+The default task runs Standard and the Ruby tests. Run `bundle exec rake standard`
+to lint separately. The test task builds the native extension and exercises
+`require`, timezone behavior, and Marshal across processes. The build task creates
+the source gem under `pkg/`; distributed source gems resolve their declared
+Magnus dependency from crates.io. The workspace uses its root Cargo lockfile.
+Rake keeps build intermediates and temporary packaging files under `tmp/`.
+Run `bundle exec rake clobber` to remove them and the generated packages while
+keeping `tmp/.gitignore`.
+
+After the required Magnus version is published, you can manually check an
+installed source gem from the repository root:
+
+```sh
+ruby docs/examples/jiff_magnus_install.rb jiff-magnus/pkg/jiff-magnus-0.0.1.gem
+```
