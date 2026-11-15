@@ -174,16 +174,19 @@ RubyGems. Explicit signing must succeed before publishing starts.
 Configure [Trusted Publishing](https://guides.rubygems.org/trusted-publishing/)
 from the gem owner's
 [trusted publishers page](https://rubygems.org/gems/jiff-magnus/trusted_publishers).
-For releases from this fork, create a GitHub Actions publisher with:
+For upstream releases from `matsadler/magnus`, create a GitHub Actions publisher
+with:
 
 | Field | Value |
 | --- | --- |
-| Repository owner | `erickguan` |
+| Repository owner | `matsadler` |
 | Repository name | `magnus` |
 | Workflow filename | `jiff-magnus-release.yml` |
 | Environment | Leave blank; the release job does not select one. |
 
 The publisher must name the repository that actually runs the workflow.
+An upstream publisher accepts releases running in `matsadler/magnus`; a fork's
+workflow needs its own publisher registration.
 The job exchanges its GitHub OIDC identity for short-lived RubyGems credentials;
 it needs no `RUBYGEMS_API_KEY` repository secret. Local releases can continue
 using the credentials from `gem signin`.
