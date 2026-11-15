@@ -6,6 +6,7 @@ name: jiff-magnus release
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: jiff-magnus-release
@@ -32,12 +33,14 @@ jobs:
           workspaces: . -> jiff-magnus/tmp/jiff_magnus/target
       - name: Lint, test, and verify source gem installation
         run: bundle exec rake release:check
-      - name: Publish the source gem
-        env:
-          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
-        run: |
-          if [ -z "$GEM_HOST_API_KEY" ]; then
-            echo "Set the RUBYGEMS_API_KEY repository secret before releasing."
-            exit 1
-          fi
-          gem push pkg/*.gem
+      - name: Sign the source gem with the workflow identity
+        run: >-
+          gem exec sigstore-cli:0.2.3 sign pkg/*.gem
+          --bundle pkg/jiff-magnus.sigstore.json
+      - uses: rubygems/configure-rubygems-credentials@v2.1.0
+        with:
+          trusted-publisher: true
+      - name: Publish the source gem with its attestation
+        run: >-
+          gem push pkg/*.gem --host https://rubygems.org
+          --attestation pkg/jiff-magnus.sigstore.json

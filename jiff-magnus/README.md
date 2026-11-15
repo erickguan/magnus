@@ -167,15 +167,39 @@ runs the Rust workspace tests.
 Run the [release workflow](../.github/workflows/jiff-magnus-release.yml) manually
 from the branch or tag you want to publish. It uses the version in
 `jiff-magnus/Cargo.toml`, lints and tests the extension, builds the source gem,
-checks installation against published Rust dependencies, and publishes it to
-RubyGems with the `RUBYGEMS_API_KEY` repository secret.
+checks installation against published Rust dependencies, signs the gem using
+GitHub's workflow identity, and uploads the gem and its Sigstore attestation to
+RubyGems. Explicit signing must succeed before publishing starts.
 
-Before the first release, create a RubyGems API key with the
-[Push rubygems scope](https://guides.rubygems.org/api-key-scopes/) and save it as
-the repository's `RUBYGEMS_API_KEY` Actions secret. The workflow supplies it to
-`gem push` through `GEM_HOST_API_KEY`, which RubyGems supports for CI publishing.
-Choose key settings that allow unattended pushes; a key that requires an OTP
-will still require that code. Trusted publishing is an optional later change.
+Configure [Trusted Publishing](https://guides.rubygems.org/trusted-publishing/)
+from the gem owner's
+[trusted publishers page](https://rubygems.org/gems/jiff-magnus/trusted_publishers).
+For releases from this fork, create a GitHub Actions publisher with:
+
+| Field | Value |
+| --- | --- |
+| Repository owner | `erickguan` |
+| Repository name | `magnus` |
+| Workflow filename | `jiff-magnus-release.yml` |
+| Environment | Leave blank; the release job does not select one. |
+
+The publisher must name the repository that actually runs the workflow.
+The job exchanges its GitHub OIDC identity for short-lived RubyGems credentials;
+it needs no `RUBYGEMS_API_KEY` repository secret. Local releases can continue
+using the credentials from `gem signin`.
+
+Attestations accompany new version uploads. RubyGems cannot attach one to the
+already-published `0.0.1` release. Bump the version in `jiff-magnus/Cargo.toml`
+when preparing the next release, then publish through the workflow. You can
+inspect its stored attestations using:
+
+```sh
+curl --fail --silent --show-error \
+  https://rubygems.org/api/v1/attestations/jiff-magnus-VERSION.json
+```
+
+Replace `VERSION` with the released version. An empty array means that version
+has no stored attestations.
 
 The required Magnus crate with `jiff-zoned` must be available on crates.io
 before the installation check can pass. This workflow publishes the Ruby gem;
