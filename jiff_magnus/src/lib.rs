@@ -24,9 +24,10 @@ static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
 /// Initializes `JiffTimezone` and `Time.find_timezone`.
 ///
 /// An existing `JiffTimezone` is reused if it inherits from this Magnus copy's
-/// timezone class and provides the public constructors. Its existing
-/// `Time.find_timezone` resolver is preserved; a missing resolver is installed.
-/// Repeated calls require the cached class and resolver to remain installed.
+/// timezone class and provides the public constructors. If `Time.find_timezone`
+/// already exists, it is left unchanged. Otherwise this function defines it so
+/// Ruby calls such as `Time.at(0, in: "Asia/Tokyo")` can resolve timezone names.
+/// Repeated calls require the cached class and method to remain installed.
 ///
 /// # Errors
 ///

@@ -22,13 +22,17 @@ struct MagnusTimeZone {
      * - Providers must supply readable storage through the terminator. The byte
      *   limit does not validate an arbitrary native pointer.
      *
-     * The owning Ruby timezone object keeps the header and string alive at
-     * stable addresses. C readers must retain that object's VALUE in a local
-     * variable and call RB_GC_GUARD on it after the last pointer read. For
-     * example, use RB_GC_GUARD(timezone_object), where timezone_object is the
-     * VALUE whose TypedData contains this header. Copy the string into
-     * reader-owned storage if it must outlive that Ruby object. Never free the
-     * borrowed pointers or read beyond the header.
+     * A Ruby timezone object implementing this ABI owns a TypedData allocation
+     * that begins with this MagnusTimeZone header. The jiff_timezone field
+     * points to a string owned by the same object. The header and string stay
+     * at stable addresses and remain valid while that Ruby object is alive.
+     *
+     * C readers validate the TypedData descriptor name and ABI version before
+     * reading this field. Keep the owning Ruby VALUE, timezone_object, in a
+     * local variable and call RB_GC_GUARD(timezone_object) after the last read
+     * through either borrowed pointer. Copy the string into reader-owned
+     * storage to retain it after releasing the Ruby object. Never free the
+     * borrowed pointers or read past the MagnusTimeZone header.
      *
      * Names resolve in the reader's database, so database differences and
      * custom named TZif can lose source rules. Unprintable or oversized
