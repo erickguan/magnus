@@ -12,36 +12,36 @@ fn zoned(timestamp: Timestamp, zone: TimeZone) -> Zoned {
 // Ruby may initialize only once per process. Exercise all protocol operations
 // in this VM, while ownership-conflict tests use separate test executables.
 #[test]
-fn timezone_integration() {
+fn test_all() {
     Ruby::init(|ruby| {
         assert!(!ruby.class_time().respond_to("find_timezone", true)?);
         init(ruby)?;
         init(ruby)?;
-        named_zone_arithmetic_and_fold_preserve_the_instant(ruby)?;
-        timezone_callbacks_resolve_instants_and_dst(ruby)?;
-        zoned_conversion_rejects_unrepresentable_ruby_times(ruby)?;
-        fixed_zones_use_native_ruby_offsets(ruby)?;
-        local_construction_resolves_civil_time(ruby)?;
-        local_construction_rejects_gaps_and_folds(ruby)?;
-        local_construction_rejects_out_of_range_instants(ruby)?;
-        named_time_survives_marshal(ruby)?;
-        fixed_time_survives_marshal(ruby)?;
-        named_zone_round_trips_with_seasonal_offsets_and_metadata(ruby)?;
-        posix_zone_observes_rules_in_both_conversion_directions(ruby)?;
-        timezone_find_returns_named_zone_and_timestamp(ruby)?;
-        resolver_parses_time_subclass(ruby)?;
-        resolver_finds_named_zones_for_ruby_time(ruby)?;
-        unknown_zone_remains_distinct_from_utc(ruby)?;
-        utc_zone_round_trips(ruby)?;
-        direct_zoned_binding(ruby)?;
-        range_boundaries_and_negative_instants(ruby)?;
-        non_iana_marshal_is_explicitly_unsupported(ruby)?;
+        test_named_zone_arithmetic(ruby)?;
+        test_timezone_callbacks_resolve_instants_and_dst(ruby)?;
+        test_zoned_conversion_rejects_unrepresentable_ruby_times(ruby)?;
+        test_fixed_zones_use_native_ruby_offsets(ruby)?;
+        test_local_construction_resolves_civil_time(ruby)?;
+        test_local_construction_rejects_gaps_and_folds(ruby)?;
+        test_local_construction_rejects_out_of_range_instants(ruby)?;
+        test_named_time_survives_marshal(ruby)?;
+        test_fixed_time_survives_marshal(ruby)?;
+        test_named_zone_metadata(ruby)?;
+        test_posix_zone_observes_rules_in_both_conversion_directions(ruby)?;
+        test_timezone_lookup_returns_frozen_objects(ruby)?;
+        test_resolver_parses_time_subclass(ruby)?;
+        test_resolver_finds_named_zones_for_ruby_time(ruby)?;
+        test_unknown_zone_remains_distinct_from_utc(ruby)?;
+        test_utc_zone_round_trips(ruby)?;
+        test_direct_zoned_binding(ruby)?;
+        test_range_boundaries_and_negative_instants(ruby)?;
+        test_non_iana_marshal_is_rejected(ruby)?;
         Ok(())
     })
     .unwrap();
 }
 
-fn named_zone_arithmetic_and_fold_preserve_the_instant(ruby: &Ruby) -> Result<(), Error> {
+fn test_named_zone_arithmetic(ruby: &Ruby) -> Result<(), Error> {
     let new_york = TimeZone::get("America/New_York").unwrap();
     let before = zoned(
         "2024-03-10T06:30:00Z".parse::<Timestamp>().unwrap(),
@@ -72,7 +72,7 @@ fn named_zone_arithmetic_and_fold_preserve_the_instant(ruby: &Ruby) -> Result<()
     Ok(())
 }
 
-fn timezone_callbacks_resolve_instants_and_dst(ruby: &Ruby) -> Result<(), Error> {
+fn test_timezone_callbacks_resolve_instants_and_dst(ruby: &Ruby) -> Result<(), Error> {
     let zone: Value = ruby.eval("JiffTimezone.find_timezone('America/New_York')")?;
     let local: Value = ruby.eval(
         "Time.utc(2024, 3, 10, 3, 30).tap do |tm| \
@@ -127,7 +127,7 @@ fn timezone_callbacks_resolve_instants_and_dst(ruby: &Ruby) -> Result<(), Error>
     Ok(())
 }
 
-fn zoned_conversion_rejects_unrepresentable_ruby_times(ruby: &Ruby) -> Result<(), Error> {
+fn test_zoned_conversion_rejects_unrepresentable_ruby_times(ruby: &Ruby) -> Result<(), Error> {
     for value in [ruby.qnil().as_value(), ruby.integer_from_i64(0).as_value()] {
         let err = Zoned::try_convert(value).unwrap_err();
         assert!(err.is_kind_of(ruby.exception_type_error()), "{err}");
@@ -157,7 +157,7 @@ fn zoned_conversion_rejects_unrepresentable_ruby_times(ruby: &Ruby) -> Result<()
     Ok(())
 }
 
-fn fixed_zones_use_native_ruby_offsets(ruby: &Ruby) -> Result<(), Error> {
+fn test_fixed_zones_use_native_ruby_offsets(ruby: &Ruby) -> Result<(), Error> {
     let zone: Value = ruby.eval("JiffTimezone.fixed(19800)")?;
     // 1970-01-01 00:00:00 UTC
     let time: Value = magnus::eval!(ruby, "Time.at(0, in: zone)", zone)?;
@@ -211,7 +211,7 @@ fn fixed_zones_use_native_ruby_offsets(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn local_construction_resolves_civil_time(ruby: &Ruby) -> Result<(), Error> {
+fn test_local_construction_resolves_civil_time(ruby: &Ruby) -> Result<(), Error> {
     let zone: Value = ruby.eval("JiffTimezone.find_timezone('America/New_York')")?;
     let local: Value = ruby.class_time().funcall(
         "new",
@@ -243,7 +243,7 @@ fn local_construction_resolves_civil_time(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn local_construction_rejects_gaps_and_folds(ruby: &Ruby) -> Result<(), Error> {
+fn test_local_construction_rejects_gaps_and_folds(ruby: &Ruby) -> Result<(), Error> {
     for code in [
         "Time.new(2024, 3, 10, 2, 30, 0, in: 'America/New_York')",
         "Time.new(2024, 11, 3, 1, 30, 0, in: 'America/New_York')",
@@ -254,7 +254,7 @@ fn local_construction_rejects_gaps_and_folds(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn local_construction_rejects_out_of_range_instants(ruby: &Ruby) -> Result<(), Error> {
+fn test_local_construction_rejects_out_of_range_instants(ruby: &Ruby) -> Result<(), Error> {
     for (code, expected) in [
         (
             "Time.new(-9999, 1, 1, 12, 0, 0, in: JiffTimezone.fixed(-72000))",
@@ -286,7 +286,7 @@ fn local_construction_rejects_out_of_range_instants(ruby: &Ruby) -> Result<(), E
     Ok(())
 }
 
-fn named_time_survives_marshal(ruby: &Ruby) -> Result<(), Error> {
+fn test_named_time_survives_marshal(ruby: &Ruby) -> Result<(), Error> {
     // 2024-01-11 02:46:44 UTC
     let named = zoned(
         Timestamp::new(1_704_941_204, 123_456_789).unwrap(),
@@ -306,7 +306,7 @@ fn named_time_survives_marshal(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn fixed_time_survives_marshal(ruby: &Ruby) -> Result<(), Error> {
+fn test_fixed_time_survives_marshal(ruby: &Ruby) -> Result<(), Error> {
     // 2022-05-31 16:08:00 UTC
     // 2022-05-31 16:08:00 UTC
     let loaded: Value = ruby
@@ -319,7 +319,7 @@ fn fixed_time_survives_marshal(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn named_zone_round_trips_with_seasonal_offsets_and_metadata(ruby: &Ruby) -> Result<(), Error> {
+fn test_named_zone_metadata(ruby: &Ruby) -> Result<(), Error> {
     let new_york = TimeZone::get("America/New_York").unwrap();
     // 2024-07-09 02:46:44 UTC and 2024-01-11 02:46:44 UTC.
     for (seconds, offset, abbreviation, dst) in [
@@ -357,7 +357,7 @@ fn named_zone_round_trips_with_seasonal_offsets_and_metadata(ruby: &Ruby) -> Res
     Ok(())
 }
 
-fn posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Result<(), Error> {
+fn test_posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Result<(), Error> {
     let zone: Value = ruby.eval("JiffTimezone.posix('EST5EDT,M3.2.0,M11.1.0')")?;
     rb_assert!(
         ruby,
@@ -415,7 +415,7 @@ fn posix_zone_observes_rules_in_both_conversion_directions(ruby: &Ruby) -> Resul
     Ok(())
 }
 
-fn timezone_find_returns_named_zone_and_timestamp(ruby: &Ruby) -> Result<(), Error> {
+fn test_timezone_lookup_returns_frozen_objects(ruby: &Ruby) -> Result<(), Error> {
     let time_class = ruby.class_time();
     assert!(!ruby.eval::<bool>("JiffTimezone.respond_to?(:get)")?);
     let exposed: Value = ruby.eval("JiffTimezone.find_timezone('America/New_York')")?;
@@ -450,7 +450,7 @@ fn timezone_find_returns_named_zone_and_timestamp(ruby: &Ruby) -> Result<(), Err
     Ok(())
 }
 
-fn resolver_parses_time_subclass(ruby: &Ruby) -> Result<(), Error> {
+fn test_resolver_parses_time_subclass(ruby: &Ruby) -> Result<(), Error> {
     ruby.eval::<Value>(
         "class TimeWithTimezone < Time; \
          def self.find_timezone(z) = JiffTimezone.find_timezone(z); end",
@@ -469,7 +469,7 @@ fn resolver_parses_time_subclass(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn resolver_finds_named_zones_for_ruby_time(ruby: &Ruby) -> Result<(), Error> {
+fn test_resolver_finds_named_zones_for_ruby_time(ruby: &Ruby) -> Result<(), Error> {
     let time_class = ruby.class_time();
     let timezone_class: magnus::RClass = ruby.eval("JiffTimezone")?;
     let instant = 1_704_067_200; // 2024-01-01 00:00:00 UTC
@@ -549,7 +549,7 @@ fn resolver_finds_named_zones_for_ruby_time(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn unknown_zone_remains_distinct_from_utc(ruby: &Ruby) -> Result<(), Error> {
+fn test_unknown_zone_remains_distinct_from_utc(ruby: &Ruby) -> Result<(), Error> {
     let unknown: Value = ruby.eval("JiffTimezone.unknown")?;
     rb_assert!(
         ruby,
@@ -573,7 +573,7 @@ fn unknown_zone_remains_distinct_from_utc(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn utc_zone_round_trips(ruby: &Ruby) -> Result<(), Error> {
+fn test_utc_zone_round_trips(ruby: &Ruby) -> Result<(), Error> {
     let utc: Value = ruby.eval("JiffTimezone.utc")?;
     rb_assert!(
         ruby,
@@ -590,7 +590,7 @@ fn utc_zone_round_trips(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn direct_zoned_binding(ruby: &Ruby) -> Result<(), Error> {
+fn test_direct_zoned_binding(ruby: &Ruby) -> Result<(), Error> {
     fn identity(time: Zoned) -> Zoned {
         time
     }
@@ -604,7 +604,7 @@ fn direct_zoned_binding(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn range_boundaries_and_negative_instants(ruby: &Ruby) -> Result<(), Error> {
+fn test_range_boundaries_and_negative_instants(ruby: &Ruby) -> Result<(), Error> {
     for timestamp in [
         Timestamp::MIN,
         Timestamp::MAX,
@@ -622,7 +622,7 @@ fn range_boundaries_and_negative_instants(ruby: &Ruby) -> Result<(), Error> {
     Ok(())
 }
 
-fn non_iana_marshal_is_explicitly_unsupported(ruby: &Ruby) -> Result<(), Error> {
+fn test_non_iana_marshal_is_rejected(ruby: &Ruby) -> Result<(), Error> {
     for expression in [
         "JiffTimezone.unknown",
         "JiffTimezone.posix('EST5EDT,M3.2.0,M11.1.0')",

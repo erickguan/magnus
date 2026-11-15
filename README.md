@@ -444,10 +444,10 @@ Magnus creates a UTC Ruby `Time` with the same instant and nanoseconds.
 
 ##### `jiff::Zoned`
 
-Enable `jiff-zoned` to accept and return `jiff::Zoned` directly. We preserve the
-instant, nanoseconds, and timezone rules through `magnus::time::JiffTimeZone`,
-the native backing type for Ruby's timezone protocol. We create its anonymous
-Ruby class lazily; we install no public class, resolver, or initialization hook.
+Enable `jiff-zoned` to accept and return `jiff::Zoned` directly. Magnus preserves
+the instant, nanoseconds, and timezone rules through `magnus::time::JiffTimeZone`,
+the native backing type for Ruby's timezone protocol. Magnus creates an anonymous
+Ruby class lazily and installs no public class, resolver, or initialization hook.
 If `JiffTimezone` inherits from this build's backing class, outgoing conversions
 use that public class. Otherwise, they use the internal class. Another build's
 class name or ABI version never permits attaching our private Rust payload.

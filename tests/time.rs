@@ -21,12 +21,13 @@ fn test_all() {
         test_supports_jiff(ruby)?;
         #[cfg(feature = "jiff-zoned")]
         {
-            test_supports_jiff_zoned(ruby)?;
-            test_jiff_zoned_metadata(ruby)?;
-            test_jiff_zoned_binding(ruby)?;
-            test_jiff_zoned_subclass(ruby)?;
-            test_jiff_zoned_variants(ruby)?;
-            test_jiff_zoned_conversion_errors(ruby)?;
+            test_named_zone_round_trips_without_registration(ruby)?;
+            test_named_zone_metadata(ruby)?;
+            test_direct_zoned_binding(ruby)?;
+            let zone = test_local_construction_resolves_civil_time(ruby)?;
+            test_local_construction_rejects_gaps_and_folds(ruby, zone)?;
+            test_utc_fixed_posix_and_unknown_zone_round_trips(ruby)?;
+            test_zoned_conversion_rejects_unrepresentable_ruby_times(ruby)?;
         }
         Ok(())
     })
@@ -114,7 +115,7 @@ fn test_supports_jiff(ruby: &Ruby) -> Result<(), Error> {
 }
 
 #[cfg(feature = "jiff-zoned")]
-fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
+fn test_named_zone_round_trips_without_registration(ruby: &Ruby) -> Result<(), Error> {
     assert!(!ruby.class_time().respond_to("find_timezone", true)?);
     let new_york = TimeZone::get("America/New_York").unwrap();
     for timestamp in [
@@ -149,7 +150,7 @@ fn test_supports_jiff_zoned(ruby: &Ruby) -> Result<(), Error> {
 }
 
 #[cfg(feature = "jiff-zoned")]
-fn test_jiff_zoned_metadata(ruby: &Ruby) -> Result<(), Error> {
+fn test_named_zone_metadata(ruby: &Ruby) -> Result<(), Error> {
     let new_york = TimeZone::get("America/New_York").unwrap();
     for (stamp, offset, abbreviation, dst) in [
         ("2024-01-01T12:00:00Z", -18_000, "EST", false),
@@ -171,7 +172,7 @@ fn test_jiff_zoned_metadata(ruby: &Ruby) -> Result<(), Error> {
 }
 
 #[cfg(feature = "jiff-zoned")]
-fn test_jiff_zoned_binding(ruby: &Ruby) -> Result<(), Error> {
+fn test_direct_zoned_binding(ruby: &Ruby) -> Result<(), Error> {
     let new_york = TimeZone::get("America/New_York").unwrap();
     // A direct Jiff type works in a binding without a public newtype or
     // any provider registration in Magnus.
@@ -190,9 +191,9 @@ fn test_jiff_zoned_binding(ruby: &Ruby) -> Result<(), Error> {
 }
 
 #[cfg(feature = "jiff-zoned")]
-fn test_jiff_zoned_subclass(ruby: &Ruby) -> Result<(), Error> {
-    // The companion owns its named class and constructors. It inherits
-    // Magnus's protocol callbacks and wraps the same native backing type.
+fn test_local_construction_resolves_civil_time(ruby: &Ruby) -> Result<Value, Error> {
+    // A public subclass exercises compatible class selection and inherited
+    // timezone callbacks in core conversions.
     let class = ruby.define_class("JiffTimezone", JiffTimeZone::class(ruby))?;
     fn find(ruby: &Ruby, class: RClass, name: String) -> Result<Obj<JiffTimeZone>, Error> {
         let zone = TimeZone::get(&name)
@@ -221,8 +222,12 @@ fn test_jiff_zoned_subclass(ruby: &Ruby) -> Result<(), Error> {
          t.zone.inspect.start_with?('#<JiffTimezone ')",
         t = returned
     );
+    local.funcall("zone", ())
+}
+
+#[cfg(feature = "jiff-zoned")]
+fn test_local_construction_rejects_gaps_and_folds(ruby: &Ruby, zone: Value) -> Result<(), Error> {
     for (month, day, hour) in [(3, 10, 2), (11, 3, 1)] {
-        let zone: Value = ruby.eval("JiffTimezone.find('America/New_York')")?;
         let error = ruby
             .class_time()
             .funcall::<_, _, Value>(
@@ -245,7 +250,7 @@ fn test_jiff_zoned_subclass(ruby: &Ruby) -> Result<(), Error> {
 }
 
 #[cfg(feature = "jiff-zoned")]
-fn test_jiff_zoned_variants(ruby: &Ruby) -> Result<(), Error> {
+fn test_utc_fixed_posix_and_unknown_zone_round_trips(ruby: &Ruby) -> Result<(), Error> {
     for zone in [
         TimeZone::UTC,
         TimeZone::unknown(),
@@ -262,7 +267,7 @@ fn test_jiff_zoned_variants(ruby: &Ruby) -> Result<(), Error> {
 }
 
 #[cfg(feature = "jiff-zoned")]
-fn test_jiff_zoned_conversion_errors(ruby: &Ruby) -> Result<(), Error> {
+fn test_zoned_conversion_rejects_unrepresentable_ruby_times(ruby: &Ruby) -> Result<(), Error> {
     for value in [ruby.qnil().as_value(), ruby.integer_from_i64(0).as_value()] {
         assert!(
             Zoned::try_convert(value)

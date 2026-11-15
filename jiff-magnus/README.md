@@ -107,7 +107,9 @@ bundle exec rake build
 
 The checkout builds against the current Magnus source through `path = ".."`.
 The default task runs Standard and the Ruby tests. Run `bundle exec rake standard`
-to lint separately. The test task builds the native extension and exercises
+to lint separately. A local Standard extension requires parentheses on `assert`
+and `refute` calls in the Ruby tests; `bundle exec rake standard:fix` adds them.
+The test task builds the native extension and exercises
 `require`, timezone behavior, and Marshal across processes. The build task creates
 the source gem under `pkg/`; distributed source gems resolve their declared
 Magnus dependency from crates.io. The workspace uses its root Cargo lockfile.
@@ -121,3 +123,25 @@ installed source gem from the repository root:
 ```sh
 ruby docs/examples/jiff_magnus_install.rb jiff-magnus/pkg/jiff-magnus-0.0.1.gem
 ```
+
+## GitHub Actions
+
+The [lint workflow](../.github/workflows/jiff-magnus-lint.yml) checks Standard,
+Rust formatting, and workflow YAML. The
+[test workflow](../.github/workflows/jiff-magnus-test.yml) runs the Ruby suite
+and builds the source gem on Ruby 3.2 through 4.0 and Ruby head on Linux, plus
+Ruby 3.4 and 4.0 on macOS and Ruby 4.0 on Windows. Magnus's existing Test workflow
+runs the Rust workspace tests.
+
+Run the [release workflow](../.github/workflows/jiff-magnus-release.yml) manually
+from the branch or tag you want to publish. It uses the version in
+`jiff-magnus/Cargo.toml`, lints and tests the extension, builds the source gem,
+checks installation against published Rust dependencies, and publishes it to
+RubyGems through trusted publishing.
+
+Before the first release, create the repository's `rubygems` GitHub environment
+and register the gem's RubyGems trusted publisher for this repository, workflow
+`jiff-magnus-release.yml`, and environment `rubygems`. The required Magnus crate
+with `jiff-zoned` must be available on crates.io before the installation check
+can pass. This workflow publishes the Ruby gem; release the required Rust crates
+separately.

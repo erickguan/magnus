@@ -1,0 +1,44 @@
+---
+name: jiff-magnus release
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jiff-magnus-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: rubygems
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: jiff-magnus
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+          working-directory: jiff-magnus
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> jiff-magnus/tmp/jiff_magnus/target
+      - name: Lint, test, and build the source gem
+        run: bundle exec rake standard test build
+      - name: Verify installation against published Rust dependencies
+        run: >-
+          bundle exec ruby ../docs/examples/jiff_magnus_install.rb pkg/*.gem
+      - uses: rubygems/configure-rubygems-credentials@v2.1.0
+      - name: Publish the source gem
+        run: gem push pkg/*.gem

@@ -1,0 +1,14 @@
+require:
+  - ./test/support/assertion_parentheses.rb
+
+JiffMagnus/AssertionParentheses:
+  Enabled: true
+  Include:
+    - test/**/*.rb
+  EnforcedStyle: require_parentheses
+  SupportedStyles:
+    - require_parentheses
+  IgnoreMacros: true
+  AllowedMethods: []
+  AllowedPatterns:
+    - '\A(?!(?:assert|refute)(?:_|\z))'
