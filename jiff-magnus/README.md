@@ -137,11 +137,15 @@ Run the [release workflow](../.github/workflows/jiff-magnus-release.yml) manuall
 from the branch or tag you want to publish. It uses the version in
 `jiff-magnus/Cargo.toml`, lints and tests the extension, builds the source gem,
 checks installation against published Rust dependencies, and publishes it to
-RubyGems through trusted publishing.
+RubyGems with the `RUBYGEMS_API_KEY` repository secret.
 
-Before the first release, create the repository's `rubygems` GitHub environment
-and register the gem's RubyGems trusted publisher for this repository, workflow
-`jiff-magnus-release.yml`, and environment `rubygems`. The required Magnus crate
-with `jiff-zoned` must be available on crates.io before the installation check
-can pass. This workflow publishes the Ruby gem; release the required Rust crates
-separately.
+Before the first release, create a RubyGems API key with the
+[Push rubygems scope](https://guides.rubygems.org/api-key-scopes/) and save it as
+the repository's `RUBYGEMS_API_KEY` Actions secret. The workflow supplies it to
+`gem push` through `GEM_HOST_API_KEY`, which RubyGems supports for CI publishing.
+Choose key settings that allow unattended pushes; a key that requires an OTP
+will still require that code. Trusted publishing is an optional later change.
+
+The required Magnus crate with `jiff-zoned` must be available on crates.io
+before the installation check can pass. This workflow publishes the Ruby gem;
+release the required Rust crates separately.

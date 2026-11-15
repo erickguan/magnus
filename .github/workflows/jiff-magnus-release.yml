@@ -14,10 +14,6 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    environment: rubygems
-    permissions:
-      contents: read
-      id-token: write
     defaults:
       run:
         working-directory: jiff-magnus
@@ -39,6 +35,12 @@ jobs:
       - name: Verify installation against published Rust dependencies
         run: >-
           bundle exec ruby ../docs/examples/jiff_magnus_install.rb pkg/*.gem
-      - uses: rubygems/configure-rubygems-credentials@v2.1.0
       - name: Publish the source gem
-        run: gem push pkg/*.gem
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          if [ -z "$GEM_HOST_API_KEY" ]; then
+            echo "Set the RUBYGEMS_API_KEY repository secret before releasing."
+            exit 1
+          fi
+          gem push pkg/*.gem
