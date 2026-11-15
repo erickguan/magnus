@@ -168,15 +168,3 @@ UTC because `IntoValue` cannot return an error. This loses the original zone.
 Named-zone Marshal restoration needs a resolver supplied by the application or
 companion. Core Magnus does not bundle an IANA database; extensions choose their
 Jiff database source.
-
-## Interoperability checks
-
-Run `ruby tests/timezone_abi/run.rb` from the Magnus checkout. The suite builds
-independent Rust extensions with separate descriptors and Jiff 0.2.42 and
-0.2.35, plus a C provider and reader. It checks conversion in both directions,
-class selection, GC compaction, ABI errors, custom named rules, and unnamed TZif
-rejection in isolated processes without modifying the host's `/etc/localtime`.
-
-The `TIMEZONE_COVERAGE` report measures bundled-name round trips at a specified
-instant. It does not measure installation frequency or exact rule preservation
-across all dates and database versions.

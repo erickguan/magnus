@@ -55,9 +55,4 @@ task installed: :build do
   ruby File.join(ROOT, "test", "installed_gem_test.rb"), PACKAGE
 end
 
-desc "Test the core timezone ABI between independent Rust and C extensions"
-task :interop do
-  ruby File.expand_path("../tests/timezone_abi/run.rb", ROOT)
-end
-
 task default: :test

@@ -4,7 +4,7 @@
 //! The gem subclasses Magnus's [`JiffTimeZone`] to reuse its timezone methods.
 //! Core [`jiff::Zoned`] conversions work before this gem is initialized.
 
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
 use jiff::tz::TimeZone;
 use magnus::{
@@ -35,28 +35,20 @@ impl Initialization {
 }
 
 static INITIALIZATION: OnceLock<Initialization> = OnceLock::new();
-
 // Ruby definition hooks can reenter either public entry point while it publishes
 // or restores definitions. Reject those calls before they can commit the cache.
-fn lock_initialization(ruby: &Ruby) -> Result<MutexGuard<'static, ()>, Error> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.try_lock().map_err(|_| {
-        conflict(
-            ruby,
-            "timezone initialization or registration is already in progress",
-        )
-    })
-}
+static INITIALIZATION_LOCK: Mutex<()> = Mutex::new(());
 
 /// Initializes `JiffTimezone` with optional automatic `Time.find_timezone` lookup.
 ///
-/// An existing `JiffTimezone` is reused if it inherits from this Magnus copy's
-/// timezone class; its public methods are left untouched. An existing
-/// `Time.find_timezone` is preserved, including private methods. Otherwise this
-/// function adds it unless `JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION` is `0`
-/// or `false` (case-insensitive), set before initialization. Constructors remain
-/// available without automatic lookup. Use [`register`] to explicitly install
-/// or replace the method regardless of this setting.
+/// When an existing `JiffTimezone` inherits from this Magnus copy's timezone
+/// class, this function reuses it and leaves its public methods untouched. It
+/// preserves an existing `Time.find_timezone`, even if the method is private.
+/// Otherwise, it adds lookup unless you set
+/// `JIFF_MAGNUS_ENABLE_AUTO_TIME_REGISTRATION` to `0` or `false`
+/// (case-insensitive) before initialization. Constructors remain available
+/// without automatic lookup. Use [`register`] to explicitly install or replace
+/// the method regardless of this setting.
 ///
 /// # Errors
 ///
@@ -64,15 +56,20 @@ fn lock_initialization(ruby: &Ruby) -> Result<MutexGuard<'static, ()>, Error> {
 ///
 /// - An existing `Object::JiffTimezone` belongs to a different native
 ///   implementation.
-/// - After initialization, `JiffTimezone` or a tracked `Time.find_timezone`
-///   method was removed or replaced.
+/// - Ruby code removed or replaced `JiffTimezone` or a tracked
+///   `Time.find_timezone` method after initialization.
 /// - Initialization or registration is already in progress.
 ///
-/// Ruby allocation and method errors propagate. Errors while publishing the
-/// class and resolver roll back only definitions added by this call.
+/// Ruby allocation and method errors propagate. If publishing the class or
+/// resolver fails, this function rolls back only definitions it added.
 #[cfg_attr(not(test), magnus::init(name = "jiff_magnus"))]
 pub fn init(ruby: &Ruby) -> Result<(), Error> {
-    let _guard = lock_initialization(ruby)?;
+    let _guard = INITIALIZATION_LOCK.try_lock().map_err(|_| {
+        conflict(
+            ruby,
+            "timezone initialization or registration is already in progress",
+        )
+    })?;
     if let Some(existing) = INITIALIZATION.get() {
         existing.validate_class(ruby)?;
         let expected: Option<Value> = ruby.get_inner(existing.resolver).entry(0)?;
@@ -180,14 +177,19 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
 ///
 /// # Errors
 ///
-/// Returns `LoadError` if the initialized class was removed or replaced, or if
-/// initialization or registration is already in progress.
+/// Returns `LoadError` if Ruby code removed or replaced the initialized class,
+/// or if initialization or registration is already in progress.
 /// Ruby errors propagate; a failed replacement restores the previous method.
 pub fn register(ruby: &Ruby) -> Result<(), Error> {
     if INITIALIZATION.get().is_none() {
         init(ruby)?;
     }
-    let _guard = lock_initialization(ruby)?;
+    let _guard = INITIALIZATION_LOCK.try_lock().map_err(|_| {
+        conflict(
+            ruby,
+            "timezone initialization or registration is already in progress",
+        )
+    })?;
     let initialization = INITIALIZATION.get().expect("companion was initialized");
     initialization.validate_class(ruby)?;
     let method = install_resolver(ruby)?;
